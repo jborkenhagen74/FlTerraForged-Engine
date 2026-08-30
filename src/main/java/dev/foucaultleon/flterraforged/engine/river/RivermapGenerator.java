@@ -4,24 +4,29 @@ import dev.foucaultleon.flterraforged.engine.api.EngineContext;
 import dev.foucaultleon.flterraforged.engine.cell.Cell;
 import dev.foucaultleon.flterraforged.engine.cell.CellLookup;
 import dev.foucaultleon.flterraforged.engine.internal.Maths;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import java.util.PriorityQueue;
 
 /**
- * Builds deterministic coarse D8 drainage graphs from the broad pre-incision terrain surface.
+ * Builds deterministic depression-aware drainage graphs and terrain-refined visible watercourses.
  *
- * <p>Nodes are aligned to a global grid rather than to chunk coordinates. Flow is routed to the
- * lowest strictly lower neighbor, accumulated from high to low elevation, and promoted to channel
- * segments once the configured drainage threshold is reached. This keeps river centerlines tied to
- * actual valleys in the eroded height field instead of to an unrelated noise mask.</p>
+ * <p>D8 remains only the coarse hydrologic skeleton. A priority-flood pass first resolves local
+ * depressions and produces spill elevations, so inland sinks become ponds/lakes instead of dead
+ * river ends. Each visible D8 edge is then refined against the local terrain into a curved path;
+ * therefore the eight grid directions no longer become the visible river geometry.</p>
  */
 public final class RivermapGenerator {
 
     private static final int[] DX = {-1, 0, 1, -1, 1, -1, 0, 1};
     private static final int[] DZ = {-1, -1, -1, 0, 0, 1, 1, 1};
+    private static final double HEIGHT_EPSILON = 1.0E-7D;
+    private static final long LAKE_EDGE_SALT = 0xA0761D6478BD642FL;
+    private static final long PATH_SALT = 0xE7037ED1A0B428DBL;
 
     private final long seed;
     private final EngineContext world;
@@ -33,7 +38,7 @@ public final class RivermapGenerator {
      *
      * @param seed hydrology seed
      * @param world immutable world context
-     * @param terrain broad terrain lookup used for drainage topology
+     * @param terrain broad terrain lookup used for drainage topology and visible-path refinement
      * @param settings river settings
      */
     public RivermapGenerator(long seed, EngineContext world, CellLookup terrain, RiverSettings settings) {
@@ -78,25 +83,23 @@ public final class RivermapGenerator {
             }
         }
 
+        FloodResult flood = fillDepressions(nodesPerAxis, heights);
         for (int gz = 1; gz < nodesPerAxis - 1; gz++) {
             for (int gx = 1; gx < nodesPerAxis - 1; gx++) {
                 int index = gz * nodesPerAxis + gx;
                 downstream[index] = selectDownstream(
-                        gx, gz, nodesPerAxis, originX, originZ, spacing, heights);
+                        gx,
+                        gz,
+                        nodesPerAxis,
+                        originX,
+                        originZ,
+                        spacing,
+                        heights,
+                        flood.filledHeight(),
+                        flood.parent());
             }
         }
-
-        Integer[] order = new Integer[count];
-        for (int i = 0; i < count; i++) {
-            order[i] = i;
-        }
-        Arrays.sort(order, Comparator.comparingDouble((Integer index) -> heights[index]).reversed());
-        for (int index : order) {
-            int next = downstream[index];
-            if (next >= 0) {
-                flow[next] += flow[index];
-            }
-        }
+        accumulateFlow(downstream, flow);
 
         int coreMinX = regionX * settings.regionSize();
         int coreMinZ = regionZ * settings.regionSize();
@@ -108,7 +111,7 @@ public final class RivermapGenerator {
             for (int gx = 1; gx < nodesPerAxis - 1; gx++) {
                 int index = gz * nodesPerAxis + gx;
                 int next = downstream[index];
-                if (next < 0 || flow[index] < settings.minimumFlow()) {
+                if (next < 0 || !visibleChannel(flow[index], flow[next])) {
                     continue;
                 }
                 int startX = originX + gx * spacing;
@@ -124,16 +127,34 @@ public final class RivermapGenerator {
                 int nextZIndex = next / nodesPerAxis;
                 int endX = originX + nextXIndex * spacing;
                 int endZ = originZ + nextZIndex * spacing;
-                double normalizedFlow = Math.max(0.0D, flow[index] - settings.minimumFlow() + 1.0D);
+                double normalizedFlow = Math.max(0.0D, flow[index] - settings.headwaterFlow() + 1.0D);
                 double width = Maths.clamp(
                         settings.minimumWidth() + Math.sqrt(normalizedFlow) * settings.widthGrowth(),
                         settings.minimumWidth(),
                         settings.maximumWidth());
+                double shapeDepth = 0.75D + Math.log1p(normalizedFlow) * settings.depthGrowth();
+                double waterDepth = Maths.clamp(
+                        settings.minimumWaterDepth() + Math.log1p(normalizedFlow) * 0.34D,
+                        settings.minimumWaterDepth(),
+                        settings.maximumWaterDepth());
+                double slope = Math.max(0.0D, flood.filledHeight()[index] - flood.filledHeight()[next])
+                        / Math.max(1.0D, spacing);
+                shapeDepth *= 0.78D + Math.min(0.28D, slope * 1.4D);
                 double depth = Math.min(
                         settings.maximumDepth(),
-                        0.85D + Math.log1p(normalizedFlow) * settings.depthGrowth());
-                double slope = Math.max(0.0D, heights[index] - heights[next]) / Math.max(1.0D, spacing);
-                depth *= 0.72D + Math.min(0.35D, slope * 1.8D);
+                        Math.max(shapeDepth, waterDepth + settings.bankFreeboard()));
+
+                double startWater = flood.filledHeight()[index] - settings.bankFreeboard();
+                double endWater = Math.min(
+                        startWater,
+                        flood.filledHeight()[next] - settings.bankFreeboard());
+                List<RiverPathPoint> path = refineVisiblePath(
+                        startX,
+                        startZ,
+                        endX,
+                        endZ,
+                        heights[index],
+                        heights[next]);
 
                 segments.add(new RiverSegment(
                         startX,
@@ -142,13 +163,82 @@ public final class RivermapGenerator {
                         endZ,
                         heights[index],
                         heights[next],
+                        startWater,
+                        endWater,
                         flow[index],
                         width,
-                        Math.min(settings.maximumDepth(), depth)));
+                        depth,
+                        path));
             }
         }
 
-        return new Rivermap(regionX, regionZ, segments);
+        LakeField lakes = new LakeField(
+                seed ^ LAKE_EDGE_SALT,
+                originX,
+                originZ,
+                spacing,
+                nodesPerAxis,
+                heights,
+                flood.filledHeight(),
+                settings.lakeMinimumDepth(),
+                settings.lakeShoreBlend(),
+                world.seaLevel());
+        return new Rivermap(regionX, regionZ, segments, lakes);
+    }
+
+    private FloodResult fillDepressions(int width, double[] heights) {
+        double[] filled = heights.clone();
+        int[] parent = new int[heights.length];
+        boolean[] visited = new boolean[heights.length];
+        Arrays.fill(parent, -1);
+        PriorityQueue<FloodNode> queue = new PriorityQueue<>(Comparator
+                .comparingDouble(FloodNode::height)
+                .thenComparingInt(FloodNode::index));
+
+        for (int x = 0; x < width; x++) {
+            seedBoundary(x, 0, width, filled, visited, queue);
+            seedBoundary(x, width - 1, width, filled, visited, queue);
+        }
+        for (int z = 1; z < width - 1; z++) {
+            seedBoundary(0, z, width, filled, visited, queue);
+            seedBoundary(width - 1, z, width, filled, visited, queue);
+        }
+
+        while (!queue.isEmpty()) {
+            FloodNode current = queue.remove();
+            int gx = current.index() % width;
+            int gz = current.index() / width;
+            for (int direction = 0; direction < DX.length; direction++) {
+                int nx = gx + DX[direction];
+                int nz = gz + DZ[direction];
+                if (nx < 0 || nz < 0 || nx >= width || nz >= width) {
+                    continue;
+                }
+                int candidate = nz * width + nx;
+                if (visited[candidate]) {
+                    continue;
+                }
+                visited[candidate] = true;
+                parent[candidate] = current.index();
+                filled[candidate] = Math.max(heights[candidate], current.height());
+                queue.add(new FloodNode(candidate, filled[candidate]));
+            }
+        }
+        return new FloodResult(filled, parent);
+    }
+
+    private static void seedBoundary(
+            int gx,
+            int gz,
+            int width,
+            double[] filled,
+            boolean[] visited,
+            PriorityQueue<FloodNode> queue) {
+        int index = gz * width + gx;
+        if (!visited[index]) {
+            visited[index] = true;
+            queue.add(new FloodNode(index, filled[index]));
+        }
     }
 
     private int selectDownstream(
@@ -158,28 +248,83 @@ public final class RivermapGenerator {
             int originX,
             int originZ,
             int spacing,
-            double[] heights) {
+            double[] heights,
+            double[] filled,
+            int[] floodParent) {
         int index = gz * width + gx;
-        double current = heights[index];
+        double current = filled[index];
         int best = -1;
-        double bestScore = current;
+        double bestHeight = current;
+        double bestOriginal = Double.POSITIVE_INFINITY;
+        double bestTie = Double.POSITIVE_INFINITY;
         int worldGridX = Math.floorDiv(originX, spacing) + gx;
         int worldGridZ = Math.floorDiv(originZ, spacing) + gz;
-        double bestTie = deterministicTieBreak(worldGridX, worldGridZ);
-        for (int i = 0; i < DX.length; i++) {
-            int nx = gx + DX[i];
-            int nz = gz + DZ[i];
+        for (int direction = 0; direction < DX.length; direction++) {
+            int nx = gx + DX[direction];
+            int nz = gz + DZ[direction];
             int candidate = nz * width + nx;
-            double score = heights[candidate];
-            double tie = deterministicTieBreak(worldGridX + DX[i], worldGridZ + DZ[i]);
-            if (score + 1.0E-7D < bestScore
-                    || (Math.abs(score - bestScore) <= 1.0E-7D && score < current && tie < bestTie)) {
-                bestScore = score;
-                bestTie = tie;
+            double candidateHeight = filled[candidate];
+            if (candidateHeight > current + HEIGHT_EPSILON) {
+                continue;
+            }
+            double original = heights[candidate];
+            double tie = deterministicUnit(
+                    PATH_SALT,
+                    worldGridX + DX[direction],
+                    worldGridZ + DZ[direction],
+                    direction);
+            boolean lower = candidateHeight + HEIGHT_EPSILON < bestHeight;
+            boolean sameFilled = Math.abs(candidateHeight - bestHeight) <= HEIGHT_EPSILON;
+            if (lower || (sameFilled && (original < bestOriginal - HEIGHT_EPSILON
+                    || (Math.abs(original - bestOriginal) <= HEIGHT_EPSILON && tie < bestTie)))) {
                 best = candidate;
+                bestHeight = candidateHeight;
+                bestOriginal = original;
+                bestTie = tie;
             }
         }
+
+        if (best >= 0 && bestHeight + HEIGHT_EPSILON < current) {
+            return best;
+        }
+        int parent = floodParent[index];
+        if (parent >= 0 && filled[parent] <= current + HEIGHT_EPSILON) {
+            return parent;
+        }
         return best;
+    }
+
+    private static void accumulateFlow(int[] downstream, double[] flow) {
+        int[] upstreamCount = new int[downstream.length];
+        for (int next : downstream) {
+            if (next >= 0) {
+                upstreamCount[next]++;
+            }
+        }
+        ArrayDeque<Integer> queue = new ArrayDeque<>();
+        for (int index = 0; index < upstreamCount.length; index++) {
+            if (upstreamCount[index] == 0) {
+                queue.add(index);
+            }
+        }
+        while (!queue.isEmpty()) {
+            int index = queue.removeFirst();
+            int next = downstream[index];
+            if (next >= 0) {
+                flow[next] += flow[index];
+                upstreamCount[next]--;
+                if (upstreamCount[next] == 0) {
+                    queue.addLast(next);
+                }
+            }
+        }
+    }
+
+    private boolean visibleChannel(double sourceFlow, double targetFlow) {
+        if (sourceFlow >= settings.minimumFlow()) {
+            return true;
+        }
+        return sourceFlow >= settings.headwaterFlow() && targetFlow >= settings.minimumFlow();
     }
 
     private boolean eligibleForChannel(int index, int next, double[] heights, double[] continentEdges) {
@@ -191,15 +336,87 @@ public final class RivermapGenerator {
         return continentEdges[index] > 0.12D || continentEdges[next] > 0.12D;
     }
 
-    private double deterministicTieBreak(int gx, int gz) {
-        long value = seed;
-        value ^= (long) gx * 0x9E3779B97F4A7C15L;
-        value ^= (long) gz * 0xC2B2AE3D27D4EB4FL;
+    private List<RiverPathPoint> refineVisiblePath(
+            int startX,
+            int startZ,
+            int endX,
+            int endZ,
+            double startHeight,
+            double endHeight) {
+        int samples = settings.pathSamples();
+        double dx = endX - startX;
+        double dz = endZ - startZ;
+        double length = Math.max(1.0D, Math.hypot(dx, dz));
+        double perpendicularX = -dz / length;
+        double perpendicularZ = dx / length;
+        double maximumOffset = settings.gridSpacing() * settings.meanderStrength();
+        double[] offsets = new double[samples];
+        Cell scratch = new Cell();
+
+        for (int index = 1; index < samples - 1; index++) {
+            double alpha = index / (double) (samples - 1);
+            double baseX = Maths.lerp(startX, endX, alpha);
+            double baseZ = Maths.lerp(startZ, endZ, alpha);
+            double desiredOffset = (deterministicUnit(PATH_SALT, startX, startZ, index) * 2.0D - 1.0D)
+                    * maximumOffset
+                    * Math.sin(Math.PI * alpha);
+            double expectedHeight = Maths.lerp(startHeight, endHeight, alpha);
+            double bestScore = Double.POSITIVE_INFINITY;
+            double bestOffset = 0.0D;
+            double[] candidates = {
+                    -maximumOffset,
+                    -maximumOffset * 0.55D,
+                    0.0D,
+                    maximumOffset * 0.55D,
+                    maximumOffset
+            };
+            for (double candidateOffset : candidates) {
+                int sampleX = (int) Math.round(baseX + perpendicularX * candidateOffset);
+                int sampleZ = (int) Math.round(baseZ + perpendicularZ * candidateOffset);
+                terrain.lookup(sampleX, sampleZ, scratch);
+                double uphillPenalty = Math.max(0.0D, scratch.heightErosion - expectedHeight) * 0.35D;
+                double meanderPenalty = Math.abs(candidateOffset - desiredOffset) * 0.055D;
+                double score = scratch.heightErosion + uphillPenalty + meanderPenalty;
+                if (score < bestScore) {
+                    bestScore = score;
+                    bestOffset = candidateOffset;
+                }
+            }
+            offsets[index] = bestOffset;
+        }
+
+        double[] smoothOffsets = offsets.clone();
+        for (int index = 1; index < samples - 1; index++) {
+            smoothOffsets[index] = (offsets[index - 1] + offsets[index] * 2.0D + offsets[index + 1]) * 0.25D;
+        }
+
+        List<RiverPathPoint> path = new ArrayList<>(samples);
+        for (int index = 0; index < samples; index++) {
+            double alpha = index / (double) (samples - 1);
+            double offset = smoothOffsets[index];
+            path.add(new RiverPathPoint(
+                    Maths.lerp(startX, endX, alpha) + perpendicularX * offset,
+                    Maths.lerp(startZ, endZ, alpha) + perpendicularZ * offset));
+        }
+        return List.copyOf(path);
+    }
+
+    private double deterministicUnit(long salt, int x, int z, int extra) {
+        long value = seed ^ salt;
+        value ^= (long) x * 0x9E3779B97F4A7C15L;
+        value ^= (long) z * 0xC2B2AE3D27D4EB4FL;
+        value ^= (long) extra * 0x165667B19E3779F9L;
         value ^= value >>> 30;
         value *= 0xBF58476D1CE4E5B9L;
         value ^= value >>> 27;
         value *= 0x94D049BB133111EBL;
         value ^= value >>> 31;
         return (value & 0x1FFFFFL) / (double) 0x1FFFFF;
+    }
+
+    private record FloodNode(int index, double height) {
+    }
+
+    private record FloodResult(double[] filledHeight, int[] parent) {
     }
 }

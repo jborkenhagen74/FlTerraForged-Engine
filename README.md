@@ -123,11 +123,11 @@ dev.foucaultleon:flterraforged-engine:0.1.0-SNAPSHOT
 5. **Erosion** — deterministic padded erosion regions, hydraulic virtual droplets,
    sediment carry/deposition, thermal talus relaxation and a bounded immutable-tile
    cache. Erosion writes the explicit pre-river surface to `Cell.heightErosion`.
-6. **River / Rivermap** — globally aligned D8 drainage graphs, deterministic flow
-   accumulation, immutable directed channel segments, flow-derived width/depth,
-   bounded map caching and post-erosion river incision. `Cell.riverMask` represents
-   centerline-to-bank proximity while `Cell.height` becomes the final river-shaped
-   surface.
+6. **River / Rivermap** — globally aligned depression-aware drainage, deterministic flow
+   accumulation, D8 topology hidden behind terrain-refined visible paths, flow-derived
+   width/depth, minimum wet-channel depth, irregular priority-flood ponds/lakes, bounded
+   map caching and post-erosion hydrology incision. `Cell.riverMask` represents
+   watercourse proximity while `Cell.height` becomes the final hydrology-shaped surface.
 7. **Climate** — broad continuous temperature/moisture fields, jittered macro climate
    regions, smooth region-boundary blending, altitude cooling, continental/coastal
    moisture effects and river-local moisture. Climate writes semantic region signals
@@ -166,13 +166,25 @@ The two numeric values override only those fields while the remaining values sti
 `rugged`. Terrain classification thresholds are derived from the same pipeline settings rather
 than being unrelated hard-coded constants.
 
-Lakes, waterfalls, public river-water elevation, biome routing and Minecraft water/surface
-placement remain later integration work.
+Biome routing and Minecraft block/fluid placement remain host responsibilities. Explicit waterfall
+shaping and a future fully 3D river/aquifer coupling remain later integration work.
 
 
 ## Hydrology water surface (r15)
 
 The default Engine now exports a continuous river-water elevation and accumulated flow with each
 active river sample. The Engine still owns no Minecraft blocks or fluids; loader adapters decide how
-to materialize the semantic water surface. Lakes/basin filling and explicit waterfall shaping remain
-separate future hydrology stages.
+to materialize the semantic water surface.
+
+## Depression-aware rivers and lakes (r16)
+
+The drainage grid is now a topology layer rather than visible geometry. A priority-flood pass resolves
+local sinks and spill elevations before flow accumulation. Meaningful filled depressions become
+irregular `LakeField` water bodies, while overflow continues through the downstream graph instead of
+terminating a river in a local minimum. Each visible D8 edge is refined into a multi-point path by
+probing nearby terrain, which removes the old long axis/diagonal segment look.
+
+Channel incision now reserves bank freeboard and a minimum wet core. During final sampling the Engine
+checks that water still clears the actual eroded local bed and deepens the channel locally when needed;
+it does not raise an individual water column and therefore preserves downstream-monotonic water levels.
+Explicit waterfall shaping remains future work.

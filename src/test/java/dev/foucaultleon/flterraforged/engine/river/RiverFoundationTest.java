@@ -34,8 +34,9 @@ final class RiverFoundationTest {
         RiverSegment segment = river.map(0, 0).segments().stream()
                 .max(Comparator.comparingDouble(RiverSegment::flow))
                 .orElseThrow();
-        int x = (segment.startX() + segment.endX()) / 2;
-        int z = (segment.startZ() + segment.endZ()) / 2;
+        RiverPathPoint center = segment.path().get(segment.path().size() / 2);
+        int x = (int) Math.round(center.x());
+        int z = (int) Math.round(center.z());
         RiverSample sample = river.sample(x, z);
         var cell = river.lookup(x, z);
 
@@ -54,14 +55,13 @@ final class RiverFoundationTest {
     @Test
     void segmentWaterSurfaceDescendsContinuouslyWithDrainageDirection() {
         RiverSegment segment = model(314159L).map(0, 0).segments().stream()
-                .filter(candidate -> candidate.startHeight() > candidate.endHeight())
+                .filter(candidate -> candidate.startWaterHeight() > candidate.endWaterHeight())
                 .findFirst()
                 .orElseThrow();
 
         RiverHit start = segment.hit(segment.startX(), segment.startZ());
-        RiverHit middle = segment.hit(
-                (segment.startX() + segment.endX()) * 0.5D,
-                (segment.startZ() + segment.endZ()) * 0.5D);
+        RiverPathPoint center = segment.path().get(segment.path().size() / 2);
+        RiverHit middle = segment.hit(center.x(), center.z());
         RiverHit end = segment.hit(segment.endX(), segment.endZ());
 
         assertTrue(start.waterSurfaceHeight() > middle.waterSurfaceHeight());
@@ -83,6 +83,63 @@ final class RiverFoundationTest {
             assertTrue(Double.isFinite(right.distance()));
             assertTrue(left.width() > 0.0D);
             assertTrue(right.width() > 0.0D);
+        }
+    }
+
+    @Test
+    void visiblePathsAreTerrainRefinedInsteadOfRawD8Lines() {
+        Rivermap map = model(224466L).map(0, 0);
+        boolean curved = map.segments().stream().anyMatch(segment -> {
+            double dx = segment.endX() - segment.startX();
+            double dz = segment.endZ() - segment.startZ();
+            double length = Math.max(1.0D, Math.hypot(dx, dz));
+            return segment.path().stream().skip(1).limit(segment.path().size() - 2L).anyMatch(point -> {
+                double distance = Math.abs(
+                        dz * point.x()
+                                - dx * point.z()
+                                + segment.endX() * (double) segment.startZ()
+                                - segment.endZ() * (double) segment.startX()) / length;
+                return distance > 0.25D;
+            });
+        });
+        assertTrue(curved, "expected at least one terrain-refined non-D8 centerline");
+    }
+
+    @Test
+    void depressionFillCreatesInlandWaterInsteadOfDeadSink() {
+        EngineContext context = new EngineContext(123L, -64, 320, 63);
+        CellLookup basin = (x, z, target) -> {
+            target.reset();
+            double radius = Math.hypot(x - 100.0D, z - 100.0D);
+            double bowl = Math.min(28.0D, radius * 0.10D);
+            double pit = -20.0D * Math.exp(-(radius * radius) / (2.0D * 70.0D * 70.0D));
+            target.height = 112.0D + bowl + pit - z * 0.02D;
+            target.heightErosion = target.height;
+            target.continentEdge = 0.85D;
+        };
+        RiverModel river = new RiverModel(123L, context, basin, basin, settings());
+        Rivermap map = river.map(0, 0);
+        boolean hasLake = false;
+        for (int z = 0; z < settings().regionSize() && !hasLake; z += 8) {
+            for (int x = 0; x < settings().regionSize(); x += 8) {
+                if (map.lake(x, z).present()) {
+                    hasLake = true;
+                    break;
+                }
+            }
+        }
+        assertTrue(hasLake, "expected a depression-filled pond/lake");
+    }
+
+    @Test
+    void centerlineMaintainsMaterialWaterDepth() {
+        Rivermap map = model(991177L).map(0, 0);
+        for (RiverSegment segment : map.segments()) {
+            RiverPathPoint center = segment.path().get(segment.path().size() / 2);
+            RiverHit hit = segment.hit(center.x(), center.z());
+            assertTrue(
+                    hit.waterSurfaceHeight() > hit.surfaceHeight() - hit.depth(),
+                    "channel center must remain below its water surface");
         }
     }
 
@@ -124,15 +181,23 @@ final class RiverFoundationTest {
 
     private static RiverSettings settings() {
         return new RiverSettings(
-                192,
-                24,
-                6,
-                4.0D,
-                3.0D,
-                14.0D,
+                200,
+                20,
+                8,
+                5.0D,
+                2.5D,
+                2.0D,
+                16.0D,
                 7.0D,
-                1.55D,
-                1.10D,
+                1.35D,
+                1.05D,
+                1.35D,
+                4.25D,
+                0.45D,
+                0.48D,
+                7,
+                0.85D,
+                1.35D,
                 16);
     }
 }

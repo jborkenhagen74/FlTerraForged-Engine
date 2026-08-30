@@ -10,10 +10,10 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * Thread-safe hydrology facade backed by cached immutable rivermaps.
+ * Thread-safe hydrology facade backed by cached immutable river maps.
  *
- * <p>Each map is generated outside the cache lock. Sampling inspects the current region and its
- * eight neighbors so channel geometry remains available when a query lies near a region boundary.</p>
+ * <p>Linear channels and depression-filled inland water are resolved together. The map generation
+ * itself remains immutable and happens outside the cache lock.</p>
  */
 public final class RiverModel implements CellLookup {
 
@@ -28,7 +28,7 @@ public final class RiverModel implements CellLookup {
      *
      * @param seed hydrology seed
      * @param world immutable world context
-     * @param erodedTerrain terrain stage after erosion and before river incision
+     * @param erodedTerrain terrain stage after erosion and before river/lake incision
      * @param drainageTerrain terrain lookup used to build the coarse drainage topology
      * @param settings river settings
      */
@@ -51,7 +51,7 @@ public final class RiverModel implements CellLookup {
      *
      * @param seed hydrology seed
      * @param world immutable world context
-     * @param terrain terrain lookup before river incision
+     * @param terrain terrain lookup before hydrology incision
      * @param settings river settings
      */
     public RiverModel(long seed, EngineContext world, CellLookup terrain, RiverSettings settings) {
@@ -63,8 +63,36 @@ public final class RiverModel implements CellLookup {
     public void lookup(int x, int z, Cell target) {
         Objects.requireNonNull(target, "target");
         erodedTerrain.lookup(x, z, target);
-        RiverHit hit = nearest(x, z);
-        if (!hit.present()) {
+        RiverHit river = nearest(x, z);
+        LakeHit lake = nearestLake(x, z);
+
+        double riverIncision = river.present() ? river.depth() : 0.0D;
+        double lakeIncision = 0.0D;
+        double lakeBed = target.heightErosion;
+        if (lake.present()) {
+            lakeBed = Math.min(target.heightErosion, lake.waterSurfaceHeight() - lake.minimumDepth());
+            lakeBed = Maths.clamp(lakeBed, world.minY() + 1.0D, world.maxYExclusive() - 2.0D);
+            lakeIncision = Math.max(0.0D, target.heightErosion - lakeBed) * lake.influence();
+        }
+
+        boolean useLake = lake.present() && (lake.influence() >= 0.42D || lakeIncision >= riverIncision);
+        if (useLake) {
+            target.lake = true;
+            target.riverMask = 1.0D - lake.influence();
+            target.riverDistance = 0.0D;
+            target.riverWidth = settings.gridSpacing() * (1.0D + lake.influence() * 5.0D);
+            target.riverDepth = lakeIncision;
+            target.riverWaterSurfaceHeight = lake.waterSurfaceHeight();
+            target.riverFlow = 0.0D;
+            target.height = Maths.clamp(
+                    target.heightErosion - lakeIncision,
+                    world.minY() + 1.0D,
+                    world.maxYExclusive() - 2.0D);
+            return;
+        }
+
+        target.lake = false;
+        if (!river.present()) {
             target.riverMask = 1.0D;
             target.riverDistance = settings.regionSize() * 2.0D;
             target.riverWidth = settings.minimumWidth();
@@ -74,52 +102,60 @@ public final class RiverModel implements CellLookup {
             target.height = target.heightErosion;
             return;
         }
-        double halfWidth = Math.max(0.5D, hit.width() * 0.5D);
-        target.riverMask = Maths.smooth(Maths.clamp(hit.distance() / halfWidth, 0.0D, 1.0D));
-        target.riverDistance = hit.distance();
-        target.riverWidth = hit.width();
-        target.riverDepth = hit.depth();
-        target.riverWaterSurfaceHeight = hit.depth() > 0.0D
-                ? hit.waterSurfaceHeight()
+
+        double halfWidth = Math.max(0.5D, river.width() * 0.5D);
+        double normalizedDistance = Maths.clamp(river.distance() / halfWidth, 0.0D, 1.0D);
+        double wetCore = 1.0D - Maths.smooth(Maths.clamp((normalizedDistance - 0.18D) / 0.70D, 0.0D, 1.0D));
+        double desiredWaterDepth = settings.minimumWaterDepth() * wetCore;
+        double requiredIncision = river.depth();
+        if (desiredWaterDepth > 0.05D && Double.isFinite(river.waterSurfaceHeight())) {
+            requiredIncision = Math.max(
+                    requiredIncision,
+                    target.heightErosion - (river.waterSurfaceHeight() - desiredWaterDepth));
+        }
+        double localIncision = Maths.clamp(requiredIncision, 0.0D, settings.maximumDepth());
+
+        target.riverMask = Maths.smooth(normalizedDistance);
+        target.riverDistance = river.distance();
+        target.riverWidth = river.width();
+        target.riverDepth = localIncision;
+        target.riverWaterSurfaceHeight = localIncision > 0.0D
+                ? river.waterSurfaceHeight()
                 : Double.NaN;
-        target.riverFlow = hit.flow();
+        target.riverFlow = river.flow();
         target.height = Maths.clamp(
-                target.heightErosion - hit.depth(),
+                target.heightErosion - localIncision,
                 world.minY() + 1.0D,
                 world.maxYExclusive() - 2.0D);
     }
 
     /**
-     * Samples the nearest river using the stable Engine API representation.
+     * Samples hydrology using the stable Engine API representation.
+     *
+     * <p>Lake samples reuse the API river container for water-surface compatibility and advertise
+     * zero flow; the final terrain type separately identifies them as lakes.</p>
      *
      * @param x world X coordinate
      * @param z world Z coordinate
-     * @return nearest river sample; values remain finite even when no nearby segment exists
+     * @return nearest active hydrology sample
      */
     public RiverSample sample(int x, int z) {
-        RiverHit hit = nearest(x, z);
-        if (!hit.present()) {
-            return new RiverSample(
-                    settings.regionSize() * 2.0D,
-                    settings.minimumWidth(),
-                    0.0D,
-                    Double.NaN,
-                    Double.NaN);
-        }
+        Cell cell = new Cell();
+        lookup(x, z, cell);
         return new RiverSample(
-                hit.distance(),
-                hit.width(),
-                hit.depth(),
-                hit.depth() > 0.0D ? hit.waterSurfaceHeight() : Double.NaN,
-                hit.flow());
+                cell.riverDistance,
+                cell.riverWidth,
+                cell.riverDepth,
+                cell.riverWaterSurfaceHeight,
+                cell.riverFlow);
     }
 
     /**
-     * Returns the internal nearest-channel representation.
+     * Returns the nearest refined linear channel.
      *
      * @param x world X coordinate
      * @param z world Z coordinate
-     * @return nearest hit or {@link RiverHit#NONE}
+     * @return nearest river hit or {@link RiverHit#NONE}
      */
     public RiverHit nearest(int x, int z) {
         int regionX = Math.floorDiv(x, settings.regionSize());
@@ -127,7 +163,7 @@ public final class RiverModel implements CellLookup {
         RiverHit nearest = map(regionX, regionZ).nearest(x, z);
         int localX = Math.floorMod(x, settings.regionSize());
         int localZ = Math.floorMod(z, settings.regionSize());
-        double boundaryRange = settings.gridSpacing() + settings.maximumWidth();
+        double boundaryRange = settings.gridSpacing() * 2.0D + settings.maximumWidth();
         int minDx = localX <= boundaryRange ? -1 : 0;
         int maxDx = settings.regionSize() - localX <= boundaryRange ? 1 : 0;
         int minDz = localZ <= boundaryRange ? -1 : 0;
@@ -147,7 +183,7 @@ public final class RiverModel implements CellLookup {
     }
 
     /**
-     * Returns one cached or newly generated immutable rivermap.
+     * Returns one cached or newly generated immutable river map.
      *
      * @param regionX river-region X index
      * @param regionZ river-region Z index
@@ -172,6 +208,31 @@ public final class RiverModel implements CellLookup {
             }
         }
         return map;
+    }
+
+    private LakeHit nearestLake(int x, int z) {
+        int regionX = Math.floorDiv(x, settings.regionSize());
+        int regionZ = Math.floorDiv(z, settings.regionSize());
+        LakeHit best = map(regionX, regionZ).lake(x, z);
+        int localX = Math.floorMod(x, settings.regionSize());
+        int localZ = Math.floorMod(z, settings.regionSize());
+        double boundaryRange = settings.gridSpacing() * (settings.paddingCells() - 1.0D);
+        int minDx = localX <= boundaryRange ? -1 : 0;
+        int maxDx = settings.regionSize() - localX <= boundaryRange ? 1 : 0;
+        int minDz = localZ <= boundaryRange ? -1 : 0;
+        int maxDz = settings.regionSize() - localZ <= boundaryRange ? 1 : 0;
+        for (int dz = minDz; dz <= maxDz; dz++) {
+            for (int dx = minDx; dx <= maxDx; dx++) {
+                if (dx == 0 && dz == 0) {
+                    continue;
+                }
+                LakeHit candidate = map(regionX + dx, regionZ + dz).lake(x, z);
+                if (candidate.influence() > best.influence()) {
+                    best = candidate;
+                }
+            }
+        }
+        return best;
     }
 
     private static final class MapCache extends LinkedHashMap<Long, Rivermap> {

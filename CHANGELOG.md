@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.0-SNAPSHOT-r16
+
+- Replace sink-prone strict-lower D8 routing with depression-aware priority-flood hydrology and deterministic spill routing.
+- Keep D8 as the hidden drainage skeleton only; refine every visible channel edge into a terrain-guided multi-point centerline so the eight grid directions are no longer the rendered river geometry.
+- Guarantee a wet channel core by coordinating incision depth, bank freeboard and minimum water depth, then enforce the minimum again against the actual eroded X/Z terrain during sampling.
+- Add depression-filled `LakeField`/`LakeHit` sampling so meaningful inland sinks become irregular ponds/lakes at their spill elevation and their overflow can continue downstream.
+- Reduce headwater abruptness with finer drainage spacing and a headwater threshold feeding established channels.
+- Add explicit `Cell.lake` semantics and classify depression-filled inland water as `StandardTerrainTypes.LAKE` without changing the stable `RiverSample` record shape.
+- Retune balanced/gentle/rugged climate scales and region blends toward larger, softer biome fields.
+- Report provider version `0.1.0-SNAPSHOT-r16` and add regression coverage for curved centerlines, minimum wet depth and depression lakes.
+
 ## 0.1.0-SNAPSHOT-r15
 
 - Report provider version `0.1.0-SNAPSHOT-r15` so host debug output can distinguish this hydrology build from r14.

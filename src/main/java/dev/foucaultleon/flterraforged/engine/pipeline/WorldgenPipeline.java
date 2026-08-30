@@ -182,7 +182,8 @@ public final class WorldgenPipeline implements CellLookup {
                 context.seaLevel(),
                 center.gradient,
                 continentalness,
-                riverSample);
+                riverSample,
+                center.lake);
         return new TerrainSample(
                 center.height,
                 center.gradient,

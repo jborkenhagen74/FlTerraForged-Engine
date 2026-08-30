@@ -50,6 +50,8 @@ public final class Cell {
     public double riverWaterSurfaceHeight;
     /** Accumulated drainage flow represented by the nearest river segment. */
     public double riverFlow;
+    /** Whether the active hydrology sample represents a pond or lake. */
+    public boolean lake;
     /** Continent-cell X coordinate. */
     public int continentX;
     /** Continent-cell Z coordinate. */
@@ -99,6 +101,7 @@ public final class Cell {
         riverDepth = other.riverDepth;
         riverWaterSurfaceHeight = other.riverWaterSurfaceHeight;
         riverFlow = other.riverFlow;
+        lake = other.lake;
         continentX = other.continentX;
         continentZ = other.continentZ;
         erosionMask = other.erosionMask;
@@ -135,6 +138,7 @@ public final class Cell {
         riverDepth = 0.0D;
         riverWaterSurfaceHeight = Double.NaN;
         riverFlow = Double.NaN;
+        lake = false;
         continentX = 0;
         continentZ = 0;
         erosionMask = false;

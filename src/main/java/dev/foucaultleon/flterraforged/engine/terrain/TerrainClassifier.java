@@ -42,11 +42,37 @@ public final class TerrainClassifier {
             double slope,
             double continentalness,
             RiverSample river) {
+        return classify(baseType, height, seaLevel, slope, continentalness, river, false);
+    }
+
+    /**
+     * Classifies a terrain position with an explicit inland-water semantic.
+     *
+     * @param baseType terrain type selected by the terrain-region pipeline
+     * @param height final surface height
+     * @param seaLevel world sea level
+     * @param slope local terrain slope
+     * @param continentalness continentalness signal
+     * @param river hydrology sample
+     * @param lake whether depression-fill hydrology marks this point as pond/lake
+     * @return final semantic terrain type
+     */
+    public TerrainType classify(
+            TerrainType baseType,
+            double height,
+            int seaLevel,
+            double slope,
+            double continentalness,
+            RiverSample river,
+            boolean lake) {
         Objects.requireNonNull(baseType, "baseType");
         Objects.requireNonNull(river, "river");
         if (height < seaLevel - settings.oceanDepthBelowSea()
                 || continentalness < settings.oceanContinentalness()) {
             return StandardTerrainTypes.OCEAN;
+        }
+        if (lake && river.hasWaterSurfaceHeight()) {
+            return StandardTerrainTypes.LAKE;
         }
         if (river.depth() >= settings.riverDepth()) {
             return StandardTerrainTypes.RIVER;

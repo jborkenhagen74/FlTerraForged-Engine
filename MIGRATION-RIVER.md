@@ -111,3 +111,18 @@ The base hydrology layer does not yet add:
 
 Those features can build on the directed `RiverSegment` graph without changing continent, terrain
 or erosion ownership.
+
+
+## r16 depression-aware visible hydrology
+
+r16 changes the role of D8: it is retained only as a deterministic drainage skeleton. Before routing,
+a priority-flood pass fills local depressions to their spill elevation. The difference between original
+and filled height drives an irregular, bilinearly sampled lake/pond field; the flood parent provides a
+valid outlet across flats so river networks no longer terminate merely because no strictly lower D8
+neighbor exists.
+
+Each emitted drainage edge is refined into a multi-point visible path. Intermediate points probe
+perpendicular candidates and prefer lower terrain while retaining deterministic meander variation.
+River width/depth still grow with flow, but the channel profile now has a stable wet core and the final
+`RiverModel` can deepen that core against post-erosion terrain to preserve minimum water depth without
+locally lifting the water surface.

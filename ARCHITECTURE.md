@@ -147,24 +147,27 @@ Minecraft terrain blocks and decoration remain outside this stage.
 
 ### Migrated foundation: river / rivermap
 
-Hydrology is now terrain-driven rather than an independent fractal mask.
-`RivermapGenerator` samples a globally aligned coarse drainage grid from the broad
-terrain surface, chooses the lowest D8 downstream neighbor and accumulates flow
-from high to low elevation. Nodes above the configured drainage threshold become
-directed `RiverSegment`s whose width and depth grow with accumulated flow.
+Hydrology is terrain-driven rather than an independent fractal mask. `RivermapGenerator`
+samples a globally aligned drainage grid, runs a priority-flood pass to resolve local
+depressions/spill elevations, then uses D8 only as a deterministic topology skeleton.
+Flow accumulation promotes channels, but each visible edge is refined into a multi-point
+terrain-guided path so axis/diagonal grid directions are not exposed as river geometry.
 
-`RiverModel` wraps the physical `ErosionPipeline`: the graph topology stays cheap
-to construct from broad terrain, while actual incision is applied to the fully
-eroded `Cell.heightErosion`. The resulting `Cell.height` is therefore the
-post-river surface and `riverMask` ranges from zero at a centerline to one outside
-the channel width. `Rivermap` objects are immutable and cached in a bounded LRU;
-normal interior samples touch one map, while neighboring maps are consulted only
-near region boundaries.
+The depression-fill delta is retained as an immutable `LakeField`. Meaningful inland
+sinks therefore become irregular ponds/lakes at a coherent spill elevation, while the
+flood parent supplies an outlet across flats instead of terminating the network.
 
-The stable Engine API continues to expose nearest centerline distance, full width
-and local depth through `RiverSample`. Lakes, waterfalls, explicit river-water
-elevation, Minecraft fluids, river biomes and surface rules remain outside this
-engine stage.
+`RiverModel` wraps the physical `ErosionPipeline`: actual incision is applied to the fully
+eroded `Cell.heightErosion`. It reserves a bank freeboard and minimum wet core, and can
+deepen the local bed when post-erosion detail would otherwise interrupt water. The water
+surface itself remains downstream-monotonic. `Cell.lake` distinguishes pond/lake samples
+from linear channels; `Cell.height` is the final hydrology-shaped surface. Immutable
+`Rivermap` objects remain bounded-LRU cached and boundary-aware.
+
+The stable Engine API still exposes distance, width, depth, water-surface height and flow
+through `RiverSample`; lake samples reuse those numeric hydrology signals while final
+`TerrainType` identifies `LAKE`. Minecraft fluids, biome objects and surface rules remain
+outside the Engine. Explicit waterfall/rapid shaping is still deferred.
 
 ### Migrated foundation: climate
 
