@@ -18,10 +18,10 @@ import java.util.Objects;
  * @param terrainRegionJitter fractional displacement of terrain-region points
  * @param terrainBlendWidth normalized blend width around terrain-region boundaries
  * @param climateScale spatial scale of temperature and moisture fields
- * @param riverScale spatial scale of the procedural river field
+ * @param riverScale hydrology density scale used to derive drainage-grid spacing
  * @param relief base continental relief in blocks
  * @param mountainRelief additional mountain relief in blocks
- * @param riverDepth maximum procedural river incision depth in blocks
+ * @param riverDepth maximum drainage-network river incision depth in blocks
  * @param erosionStrength hydraulic erosion strength multiplier
  * @param erosionDeposition hydraulic deposition strength multiplier
  * @param thermalErosionStrength thermal slope-relaxation strength

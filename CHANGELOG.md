@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.0-SNAPSHOT-r12
+
+- Replaced the bootstrap independent river-noise field with terrain-driven River/Rivermap hydrology.
+- Added globally aligned D8 drainage nodes, downhill routing and deterministic flow accumulation.
+- Added immutable `RiverSegment`, `Rivermap` and internal `RiverHit` representations.
+- Added flow-derived channel width/depth and post-erosion river incision into `Cell.height`.
+- `Cell.heightErosion` now remains the explicit pre-river surface while `riverMask` records channel proximity.
+- Added bounded immutable-rivermap caching with generation outside the cache lock and boundary-aware neighbor lookup.
+- Changed `TerrainModel` to consume the full post-river `CellLookup`; the old scalar `RiverModel.incision(...)` path is gone.
+- High-altitude rivers may now retain semantic `RIVER` classification instead of being limited to sea-level terrain.
+- Added deterministic, centerline-incision, boundary and concurrent river tests plus `MIGRATION-RIVER.md`.
+
 ## 0.1.0-SNAPSHOT-r11
 
 - Replaced the bootstrap scalar `ErosionModel` with a dedicated physical erosion pipeline.

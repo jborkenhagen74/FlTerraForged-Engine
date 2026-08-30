@@ -104,7 +104,7 @@ dev.foucaultleon:flterraforged-engine:0.1.0-SNAPSHOT
 
 ## Current implementation
 
-`0.1.0-SNAPSHOT-r11` contains the first five migrated engine foundations:
+`0.1.0-SNAPSHOT-r12` contains the first six migrated engine foundations:
 
 1. **Noise** — seed-aware modular scalar fields, interpolation, gradient/value
    sources, octave composition, arithmetic modules, curve/distance functions and
@@ -122,9 +122,13 @@ dev.foucaultleon:flterraforged-engine:0.1.0-SNAPSHOT
    plateaus and mountain regions without exposing Minecraft worldgen classes.
 5. **Erosion** — deterministic padded erosion regions, hydraulic virtual droplets,
    sediment carry/deposition, thermal talus relaxation and a bounded immutable-tile
-   cache. Erosion modifies the continuous engine height field before river
-   incision and writes erosion/sediment/gradient signals into the common `Cell`.
+   cache. Erosion writes the explicit pre-river surface to `Cell.heightErosion`.
+6. **River / Rivermap** — globally aligned D8 drainage graphs, deterministic flow
+   accumulation, immutable directed channel segments, flow-derived width/depth,
+   bounded map caching and post-erosion river incision. `Cell.riverMask` represents
+   centerline-to-bank proximity while `Cell.height` becomes the final river-shaped
+   surface.
 
-The active `TerrainModel` now consumes continent → terrain → erosion → river in
-that order. River-map ownership remains outside `Continent`; `RiverModel` is the
-remaining bootstrap stage awaiting its dedicated migration.
+The active terrain flow is now continent → terrain → erosion → river. Climate is
+sampled independently after terrain shaping. Lakes, waterfalls, public river-water
+elevation and Minecraft water/surface placement remain later integration work.

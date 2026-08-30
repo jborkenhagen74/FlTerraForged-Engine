@@ -2,9 +2,8 @@ package dev.foucaultleon.flterraforged.engine.terrain;
 
 import dev.foucaultleon.flterraforged.engine.api.EngineContext;
 import dev.foucaultleon.flterraforged.engine.cell.Cell;
-import dev.foucaultleon.flterraforged.engine.erosion.ErosionPipeline;
 import dev.foucaultleon.flterraforged.engine.internal.Maths;
-import dev.foucaultleon.flterraforged.engine.river.RiverModel;
+import dev.foucaultleon.flterraforged.engine.cell.CellLookup;
 import java.util.Objects;
 
 /**
@@ -14,23 +13,17 @@ import java.util.Objects;
 public final class TerrainModel {
 
     private final EngineContext context;
-    private final ErosionPipeline erosion;
-    private final RiverModel river;
+    private final CellLookup terrain;
 
     /**
      * Creates the terrain pipeline.
      *
      * @param context immutable world context
-     * @param erosion physical erosion stage
-     * @param river current hydrology stage
+     * @param terrain fully shaped terrain lookup including erosion and rivers
      */
-    public TerrainModel(
-            EngineContext context,
-            ErosionPipeline erosion,
-            RiverModel river) {
+    public TerrainModel(EngineContext context, CellLookup terrain) {
         this.context = Objects.requireNonNull(context, "context");
-        this.erosion = Objects.requireNonNull(erosion, "erosion");
-        this.river = Objects.requireNonNull(river, "river");
+        this.terrain = Objects.requireNonNull(terrain, "terrain");
     }
 
     /**
@@ -53,9 +46,7 @@ public final class TerrainModel {
      * @return {@code target}
      */
     public Cell sampleCell(int x, int z, Cell target) {
-        erosion.lookup(x, z, target);
-        double continentalness = target.continentEdge * 2.0D - 1.0D;
-        target.height -= river.incision(x, z, continentalness);
+        terrain.lookup(x, z, target);
         target.height = Maths.clamp(
                 target.height,
                 context.minY() + 1.0D,

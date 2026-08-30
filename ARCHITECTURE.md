@@ -33,11 +33,14 @@ DefaultTerrainWorld (one seed/world)
         |    +-- TerrainPopulator
         |    +-- Blender / CompositeTerrain
         |    +-- ErosionPipeline
-        |         +-- HydraulicErosionFilter
-        |         +-- ThermalErosionFilter
-        |         +-- bounded immutable ErosionTile cache
+        |    |    +-- HydraulicErosionFilter
+        |    |    +-- ThermalErosionFilter
+        |    |    +-- bounded immutable ErosionTile cache
+        |    +-- RiverModel
+        |         +-- RivermapGenerator / D8 drainage
+        |         +-- immutable RiverSegment network
+        |         +-- bounded immutable Rivermap cache
         +-- ClimateModel
-        +-- RiverModel
         +-- modular Noise graph
         +-- Cell foundation
         |
@@ -46,10 +49,10 @@ TerrainSample
 ```
 
 `DefaultTerrainWorld` and all model/noise definitions are immutable after
-construction. Erosion uses a small synchronized LRU containing only immutable
-completed tiles; expensive tile generation happens outside the lock. Sampling
-therefore remains deterministic and safe for concurrent chunk-generation calls
-without recursive cache wait graphs.
+construction. Erosion and River/Rivermap each use bounded synchronized LRUs
+containing only immutable completed regions/maps; expensive generation happens
+outside their locks. Sampling therefore remains deterministic and safe for
+concurrent chunk-generation calls without recursive cache wait graphs.
 
 ## Migration state
 
@@ -139,6 +142,27 @@ The common `Cell` now uses `heightErosion` for post-erosion/pre-river height,
 `gradient` for local eroded slope and `erosionMask` to mark modified positions.
 Minecraft terrain blocks and decoration remain outside this stage.
 
+### Migrated foundation: river / rivermap
+
+Hydrology is now terrain-driven rather than an independent fractal mask.
+`RivermapGenerator` samples a globally aligned coarse drainage grid from the broad
+terrain surface, chooses the lowest D8 downstream neighbor and accumulates flow
+from high to low elevation. Nodes above the configured drainage threshold become
+directed `RiverSegment`s whose width and depth grow with accumulated flow.
+
+`RiverModel` wraps the physical `ErosionPipeline`: the graph topology stays cheap
+to construct from broad terrain, while actual incision is applied to the fully
+eroded `Cell.heightErosion`. The resulting `Cell.height` is therefore the
+post-river surface and `riverMask` ranges from zero at a centerline to one outside
+the channel width. `Rivermap` objects are immutable and cached in a bounded LRU;
+normal interior samples touch one map, while neighboring maps are consulted only
+near region boundaries.
+
+The stable Engine API continues to expose nearest centerline distance, full width
+and local depth through `RiverSample`. Lakes, waterfalls, explicit river-water
+elevation, Minecraft fluids, river biomes and surface rules remain outside this
+engine stage.
+
 ## Planned upstream migration boundary
 
 ### Engine candidates
@@ -146,7 +170,6 @@ Minecraft terrain blocks and decoration remain outside this stage.
 - noise primitives and composition;
 - cell/Voronoi systems;
 - erosion mathematics;
-- river/hydrology mathematics;
 - climate mathematics;
 - deterministic caches that do not depend on Minecraft.
 

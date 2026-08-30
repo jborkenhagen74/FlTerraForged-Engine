@@ -20,6 +20,7 @@ import dev.foucaultleon.flterraforged.engine.noise.Noise;
 import dev.foucaultleon.flterraforged.engine.noise.Noise2D;
 import dev.foucaultleon.flterraforged.engine.noise.SeededNoise2D;
 import dev.foucaultleon.flterraforged.engine.river.RiverModel;
+import dev.foucaultleon.flterraforged.engine.river.RiverSettings;
 import dev.foucaultleon.flterraforged.engine.terrain.TerrainClassifier;
 import dev.foucaultleon.flterraforged.engine.terrain.TerrainModel;
 import dev.foucaultleon.flterraforged.engine.terrain.populator.TerrainPopulator;
@@ -72,11 +73,9 @@ public final class DefaultTerrainWorld implements TerrainWorld {
                 3,
                 0.45D,
                 2.15D);
-        Noise2D riverNoise = fractal(seed, 0x85EBCA77C2B2AE63L, 1.0D, 4, 0.48D, 2.0D);
         Noise2D temperatureNoise = fractal(seed, 0xD6E8FEB86659FD93L, 1.0D, 3, 0.50D, 2.0D);
         Noise2D moistureNoise = fractal(seed, 0xA5A3564E27F3A21DL, 1.0D, 3, 0.50D, 2.0D);
 
-        this.river = new RiverModel(riverNoise, settings.riverScale(), settings.riverDepth());
         TerrainRegionSampler regions = new TerrainRegionSampler(
                 seed ^ 0xDB4F0B9175AE2165L,
                 settings.terrainRegionScale(),
@@ -98,7 +97,13 @@ public final class DefaultTerrainWorld implements TerrainWorld {
                 context,
                 (x, z, target) -> populator.populate(target, x, z),
                 ErosionSettings.from(settings));
-        this.terrain = new TerrainModel(context, erosion, this.river);
+        this.river = new RiverModel(
+                seed ^ 0x85EBCA77C2B2AE63L,
+                context,
+                erosion,
+                (x, z, target) -> populator.populate(target, x, z),
+                RiverSettings.from(settings));
+        this.terrain = new TerrainModel(context, this.river);
         this.climate = new ClimateModel(
                 temperatureNoise,
                 moistureNoise,
@@ -138,7 +143,7 @@ public final class DefaultTerrainWorld implements TerrainWorld {
 
         double continentalness = center.continentEdge * 2.0D - 1.0D;
         ClimateSample climateSample = climate.sample(x, z, center.height, context.seaLevel());
-        RiverSample riverSample = river.sample(x, z, continentalness);
+        RiverSample riverSample = river.sample(x, z);
         TerrainType type = classifier.classify(
                 center.terrain,
                 center.height,

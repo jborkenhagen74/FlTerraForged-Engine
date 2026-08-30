@@ -1,5 +1,26 @@
 # Upstream provenance
 
+## r12: river / rivermap foundation
+
+The hydrology migration uses the TerraForged-family separation between terrain
+shape and river-map generation as its architectural reference. ReTerraForged
+keeps river-map concepts as a distinct world-generation concern, while
+FreeTerraForged continues that lineage and publicly describes later 3D rivers and
+waterfalls among its added features.
+
+FlTerraForged-Engine does not copy Minecraft-specific river placement. The r12
+implementation is a Java-only rewrite using globally aligned D8 drainage nodes,
+flow accumulation and immutable directed segments. It intentionally keeps
+`Rivermap` ownership out of `Continent`, applies incision after the physical
+erosion stage, and leaves water blocks, river biomes, surface rules, lakes,
+waterfalls and explicit public water-surface elevation for later layers.
+
+Reference repositories:
+
+- https://github.com/racoonman2/ReTerraForged (1.20.1 lineage)
+- https://github.com/ETcodehome/FreeTerraForged (1.21.1 lineage)
+- https://github.com/TerraForged/TerraForged
+
 ## r11: erosion foundation
 
 The erosion migration uses TerraForged's documented simulated-erosion behavior
@@ -105,7 +126,6 @@ closely derived from upstream implementations.
 ## Planned references for later stages
 
 - erosion mathematics;
-- river/hydrology mathematics;
 - climate mathematics;
 - deterministic caches that do not depend on Minecraft.
 

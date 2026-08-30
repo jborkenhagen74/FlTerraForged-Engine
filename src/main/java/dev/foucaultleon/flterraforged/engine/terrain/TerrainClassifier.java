@@ -35,7 +35,7 @@ public final class TerrainClassifier {
         if (height < seaLevel - 4.0D || continentalness < -0.72D) {
             return StandardTerrainTypes.OCEAN;
         }
-        if (river.depth() > 1.25D && height <= seaLevel + 18.0D) {
+        if (river.depth() > 0.75D) {
             return StandardTerrainTypes.RIVER;
         }
         if (height <= seaLevel + 2.0D || continentalness < -0.35D) {
