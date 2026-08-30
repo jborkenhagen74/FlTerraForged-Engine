@@ -30,7 +30,8 @@ DefaultTerrainWorld (one seed/world)
         +-- ClimateModel
         +-- RiverModel
         +-- ErosionModel
-        +-- Noise channels
+        +-- modular Noise graph
+        +-- Cell foundation (next terrain stages)
         |
         v
 TerrainSample
@@ -40,21 +41,35 @@ TerrainSample
 construction. `sample(x, z)` therefore has no shared mutable state and is safe
 for concurrent chunk-generation calls.
 
-## Bootstrap algorithm
+## Migration state
 
-The 0.1.0 snapshot includes a small deterministic reference generator so the
-SPI can be tested end-to-end before upstream code is imported. It uses:
+### Migrated foundation: noise
 
-- seeded value noise;
-- fractal octave composition;
-- broad continentalness;
-- ridge-derived relief;
-- a simple erosion modulation;
-- a simple river-distance field;
-- central-difference slope estimation;
-- semantic terrain classification.
+The bootstrap-only value/fractal classes have been replaced in active terrain
+sampling by a seed-aware modular noise foundation. Its organization follows the
+functional split found in ReTerraForged/FreeTerraForged (`domain`, `function`,
+`module`) while removing Mojang codecs and Minecraft types. It currently
+provides:
 
-These algorithms are scaffolding, not compatibility claims with TerraForged.
+- deterministic value and gradient lattice fields;
+- interpolation and octave/fractal composition;
+- arithmetic/range modules;
+- curve and distance functions;
+- coordinate-domain warping;
+- a seed-bound adapter for the existing terrain models.
+
+### Migrated foundation: cell
+
+The cell layer now models the engine's mutable intermediate terrain state with
+caller-owned instances. It retains the useful cell-oriented generation model
+from ReTerraForged while deliberately excluding biome objects and shared global
+cache ownership. `CellLookup` fills caller-owned targets and `CellField` is an
+immutable ordered population pipeline. This design keeps the foundation safe for
+parallel chunk-generation use.
+
+The cell layer is not yet wired into the bootstrap `TerrainModel`. Continents
+and terrain shaping will be migrated next and will become the first real users
+of the cell pipeline.
 
 ## Planned upstream migration boundary
 

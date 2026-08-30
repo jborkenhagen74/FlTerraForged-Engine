@@ -104,6 +104,16 @@ dev.foucaultleon:flterraforged-engine:0.1.0-SNAPSHOT
 
 ## Current implementation
 
-`0.1.0-SNAPSHOT` is a bootstrap engine used to validate the API boundary,
-deterministic sampling, ServiceLoader discovery and concurrent access.
-TerraForged/ReTerraForged/FreeTerraForged algorithms are not imported yet.
+`0.1.0-SNAPSHOT-r7` contains the first two migrated engine foundations:
+
+1. **Noise** — seed-aware modular scalar fields, interpolation, gradient/value
+   sources, octave composition, arithmetic modules, curve/distance functions and
+   coordinate-domain warping. The implementation is Minecraft- and Codec-free.
+2. **Cell** — a mutable semantic terrain cell plus allocation-conscious
+   `CellLookup`, ordered `CellPopulator` pipelines and noise-backed cell stages.
+   Biome objects and Minecraft registry types are intentionally excluded.
+
+The existing bootstrap terrain sampler now consumes the new seed-aware modular
+noise foundation through `SeededNoise2D`. The cell pipeline is intentionally not
+yet wired into `TerrainModel`; that happens with the terrain/continent migration
+so that the stages remain independently testable.

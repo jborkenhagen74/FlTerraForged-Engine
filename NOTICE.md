@@ -1,9 +1,19 @@
 # Notice
 
-FlTerraForged Engine is an independent project intended to provide an external
-terrain engine for FlTerraForged.
+FlTerraForged Engine is an independent external terrain-engine implementation
+for FlTerraForged.
 
-The 0.1.0-SNAPSHOT bootstrap implementation was created specifically for this
-project and does not contain copied TerraForged/ReTerraForged/FreeTerraForged or
-AronaLayers source code. Later migration commits must preserve and document all
-applicable upstream notices.
+Starting with `0.1.0-SNAPSHOT-r7`, the project reimplements selected modular
+noise and cell-generation concepts from the TerraForged project family under
+its own Minecraft-independent architecture and namespace.
+
+Upstream reference projects include:
+
+- TerraForged — MIT License, Copyright (c) 2020 TerraForged.
+- TerraForged/Noise2D — MIT License, Copyright (c) 2018 dags.
+- ReTerraForged — MIT-licensed continuation of TerraForged.
+- FreeTerraForged — community continuation under the MIT license.
+
+Detailed source paths and migration boundaries are recorded in `UPSTREAMS.md`.
+No Mojang/Minecraft, Fabric, NeoForge, TerraBlender, Conquest Reforged or
+AronaLayers runtime dependency is introduced by this migration.

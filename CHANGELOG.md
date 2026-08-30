@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.0-SNAPSHOT-r7
+
+- Migrated the first two external-engine foundations: `noise` and `cell`.
+- Added seed-aware `Noise` contract, value/gradient sources, interpolation and fractal composition.
+- Added composable `domain`, `function` and `module` packages without Mojang codecs.
+- Replaced the active bootstrap noise chain with the new modular noise foundation via `SeededNoise2D`.
+- Replaced the placeholder `CellField` with `Cell`, `CellLookup`, `CellPopulator`, ordered `CellField` pipelines and `NoiseCellPopulator`.
+- Kept biome objects, registries, Minecraft classes and loader types outside the engine.
+- Added deterministic, range, domain-warp, cell-reset/copy, pipeline and concurrent-cell tests.
+- Verified Java 17 compilation, `-Xlint:all`, strict Javadoc (`-Werror`) and standalone noise/cell smoke tests.
+- Documented ReTerraForged 1.20.1, FreeTerraForged 1.21.1 and TerraForged Noise2D provenance.
+
 ## 0.1.0-SNAPSHOT-r3
 
 - Converted `EngineSmokeTest` from a standalone `main()` program to JUnit 5.

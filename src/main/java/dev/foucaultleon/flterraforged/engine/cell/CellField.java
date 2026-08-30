@@ -1,36 +1,57 @@
 package dev.foucaultleon.flterraforged.engine.cell;
 
-import dev.foucaultleon.flterraforged.engine.noise.Noise2D;
+import java.util.List;
 import java.util.Objects;
 
 /**
- * Reserved semantic cell field for later TerraForged-style cell migration.
- * The bootstrap engine uses it only as a stable macro-region modulation.
+ * Ordered, immutable pipeline of {@link CellPopulator} stages.
+ *
+ * <p>The pipeline object is thread-safe as long as its populators are thread-safe. Each invocation
+ * resets and fills a caller-owned {@link Cell}, so the field itself owns no mutable sampling state.</p>
  */
-public final class CellField {
+public final class CellField implements CellLookup {
 
-    private final Noise2D source;
-    private final double scale;
+    private final List<CellPopulator> populators;
 
     /**
-     * Creates a scaled cell field.
+     * Creates a cell field from ordered generation stages.
      *
-     * @param source backing noise source
-     * @param scale spatial sampling scale
+     * @param populators ordered generation stages
      */
-    public CellField(Noise2D source, double scale) {
-        this.source = Objects.requireNonNull(source, "source");
-        this.scale = scale;
+    public CellField(List<? extends CellPopulator> populators) {
+        Objects.requireNonNull(populators, "populators");
+        this.populators = List.copyOf(populators);
+        if (this.populators.stream().anyMatch(Objects::isNull)) {
+            throw new NullPointerException("populators contains null");
+        }
     }
 
     /**
-     * Samples the macro-region field at an X/Z position.
+     * Creates a cell field from ordered generation stages.
      *
-     * @param x world X coordinate
-     * @param z world Z coordinate
-     * @return field value
+     * @param populators ordered generation stages
+     * @return cell field
      */
-    public double sample(int x, int z) {
-        return source.sample(x * scale, z * scale);
+    public static CellField of(CellPopulator... populators) {
+        Objects.requireNonNull(populators, "populators");
+        return new CellField(List.of(populators));
+    }
+
+    /**
+     * Returns the immutable generation-stage list.
+     *
+     * @return generation stages
+     */
+    public List<CellPopulator> populators() {
+        return populators;
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public void lookup(int x, int z, Cell target) {
+        Objects.requireNonNull(target, "target").reset();
+        for (CellPopulator populator : populators) {
+            populator.apply(target, x, z);
+        }
     }
 }
