@@ -13,7 +13,14 @@ import java.util.Objects;
  */
 public record Rivermap(int regionX, int regionZ, List<RiverSegment> segments, LakeField lakes) {
 
-    /** Creates an immutable river map. */
+    /**
+     * Creates an immutable river map.
+     *
+     * @param regionX aligned river-region X index
+     * @param regionZ aligned river-region Z index
+     * @param segments directed terrain-refined channel segments whose upstream node belongs to this region
+     * @param lakes depression-filled lake/pond field covering the padded hydrology region
+     */
     public Rivermap {
         Objects.requireNonNull(segments, "segments");
         Objects.requireNonNull(lakes, "lakes");

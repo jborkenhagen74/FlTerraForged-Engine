@@ -34,7 +34,22 @@ public record RiverSegment(
         double depth,
         List<RiverPathPoint> path) {
 
-    /** Copies and validates the visible path. */
+    /**
+     * Copies and validates the visible path.
+     *
+     * @param startX upstream coarse-node X coordinate
+     * @param startZ upstream coarse-node Z coordinate
+     * @param endX downstream coarse-node X coordinate
+     * @param endZ downstream coarse-node Z coordinate
+     * @param startHeight upstream eroded terrain height
+     * @param endHeight downstream eroded terrain height
+     * @param startWaterHeight upstream hydrologic water surface
+     * @param endWaterHeight downstream hydrologic water surface
+     * @param flow accumulated drainage weight at the upstream node
+     * @param width full channel width in blocks
+     * @param depth maximum centerline incision depth in blocks
+     * @param path terrain-refined visible centerline including both endpoints
+     */
     public RiverSegment {
         Objects.requireNonNull(path, "path");
         path = List.copyOf(path);

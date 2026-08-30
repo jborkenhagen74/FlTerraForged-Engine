@@ -45,7 +45,28 @@ public record RiverSettings(
         double lakeShoreBlend,
         int cacheSize) {
 
-    /** Validates river settings. */
+    /**
+     * Validates river settings.
+     *
+     * @param regionSize map-region size in blocks; must be divisible by {@code gridSpacing}
+     * @param gridSpacing spacing between coarse drainage nodes in blocks
+     * @param paddingCells number of drainage-node rings generated beyond a map region
+     * @param minimumFlow accumulated drainage required for a normal visible channel
+     * @param headwaterFlow minimum accumulated drainage allowed immediately upstream of a normal channel
+     * @param minimumWidth minimum full channel width in blocks
+     * @param maximumWidth maximum full channel width in blocks
+     * @param maximumDepth maximum channel incision in blocks
+     * @param widthGrowth width increase applied as flow accumulation grows
+     * @param depthGrowth depth increase applied as flow accumulation grows
+     * @param minimumWaterDepth minimum centerline water depth for a materialized stream
+     * @param maximumWaterDepth maximum target centerline water depth for large rivers
+     * @param bankFreeboard minimum vertical bank height retained above the river-water surface
+     * @param meanderStrength maximum terrain-guided lateral path displacement as a fraction of grid spacing
+     * @param pathSamples number of points used to refine each coarse D8 edge into a visible path
+     * @param lakeMinimumDepth minimum depression-fill depth that may become inland water
+     * @param lakeShoreBlend depth interval used to soften irregular lake shores
+     * @param cacheSize maximum number of completed immutable rivermaps cached by a river model
+     */
     public RiverSettings {
         if (regionSize <= 0 || gridSpacing <= 0 || regionSize % gridSpacing != 0) {
             throw new IllegalArgumentException("River regionSize must be positive and divisible by gridSpacing");

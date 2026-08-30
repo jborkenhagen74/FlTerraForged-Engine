@@ -7,8 +7,6 @@ out/
 .project
 .settings/
 .DS_Store
-./gradle/
 gradlew
 gradlew.bat
-gradle/wrapper/gradle-wrapper.jar
-gradle/wrapper/gradle-wrapper.properties
+gradle/wrapper/

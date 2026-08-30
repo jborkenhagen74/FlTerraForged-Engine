@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.0-SNAPSHOT-r17
+
+- Fix strict Javadoc generation for compact constructors in `Rivermap`, `RiverSegment` and `RiverSettings` by documenting every implicit record-constructor parameter.
+- Keep Javadoc warnings fatal with `-Werror` and make `check` depend on `javadoc`, so normal CI verification catches documentation regressions before publication.
+- Ignore `gradlew`, `gradlew.bat` and the complete `gradle/wrapper/` directory because CI uses the explicitly provisioned Gradle version.
+- Report provider version `0.1.0-SNAPSHOT-r17`.
+
 ## 0.1.0-SNAPSHOT-r16
 
 - Replace sink-prone strict-lower D8 routing with depression-aware priority-flood hydrology and deterministic spill routing.

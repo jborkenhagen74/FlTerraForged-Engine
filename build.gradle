@@ -141,6 +141,7 @@ tasks.register('verifyServiceProvider') {
 }
 
 tasks.named('check') {
+    dependsOn 'javadoc'
     dependsOn 'verifyEngineIsolation'
     dependsOn 'verifyServiceProvider'
 }
