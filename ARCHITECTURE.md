@@ -41,6 +41,9 @@ DefaultTerrainWorld (one seed/world)
         |         +-- immutable RiverSegment network
         |         +-- bounded immutable Rivermap cache
         +-- ClimateModel
+        |    +-- ClimateRegionSampler
+        |    +-- broad temperature/moisture noise
+        |    +-- altitude/coast/river feedback
         +-- modular Noise graph
         +-- Cell foundation
         |
@@ -163,6 +166,22 @@ and local depth through `RiverSample`. Lakes, waterfalls, explicit river-water
 elevation, Minecraft fluids, river biomes and surface rules remain outside this
 engine stage.
 
+### Migrated foundation: climate
+
+Climate is now a first-class final semantic stage after river shaping. `ClimateModel`
+implements `CellLookup`: it requests the fully shaped terrain/river cell, samples broad
+temperature and moisture fields, resolves an independent jittered Voronoi
+`ClimateRegionSample`, blends climate anchors near region boundaries, applies altitude
+cooling, continental/coastal moisture modulation and local river moisture, then writes
+`regionTemperature`, `regionMoisture`, `biomeRegionId`, `biomeRegionEdge`,
+`macroBiomeId`, `temperature` and `moisture` into the shared `Cell`.
+
+The structure follows the useful separation visible in ReTerraForged and
+FreeTerraForged (`Climate` plus `ClimateModule`) without retaining their Minecraft biome
+objects, control points or codec/registry dependencies. `macroBiomeId` is only a stable
+semantic grouping hint; FlTerraForged remains responsible for mapping climate and
+terrain signals to version-specific Minecraft biomes.
+
 ## Planned upstream migration boundary
 
 ### Engine candidates
@@ -170,7 +189,6 @@ engine stage.
 - noise primitives and composition;
 - cell/Voronoi systems;
 - erosion mathematics;
-- climate mathematics;
 - deterministic caches that do not depend on Minecraft.
 
 ### Remain in FlTerraForged

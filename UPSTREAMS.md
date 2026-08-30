@@ -1,6 +1,6 @@
 # Upstream provenance
 
-## r12: river / rivermap foundation
+## r13: river / rivermap foundation
 
 The hydrology migration uses the TerraForged-family separation between terrain
 shape and river-map generation as its architectural reference. ReTerraForged
@@ -8,7 +8,7 @@ keeps river-map concepts as a distinct world-generation concern, while
 FreeTerraForged continues that lineage and publicly describes later 3D rivers and
 waterfalls among its added features.
 
-FlTerraForged-Engine does not copy Minecraft-specific river placement. The r12
+FlTerraForged-Engine does not copy Minecraft-specific river placement. The r13
 implementation is a Java-only rewrite using globally aligned D8 drainage nodes,
 flow accumulation and immutable directed segments. It intentionally keeps
 `Rivermap` ownership out of `Continent`, applies incision after the physical
@@ -126,8 +126,28 @@ closely derived from upstream implementations.
 ## Planned references for later stages
 
 - erosion mathematics;
-- climate mathematics;
 - deterministic caches that do not depend on Minecraft.
 
 AronaLayers-gen and AronaLayers-extras remain references for FlTerraForged's
 surface/layer integration and are not part of the external engine migration.
+
+
+## r13: climate foundation
+
+The climate migration uses the shared structure present in ReTerraForged 1.20.1 and
+FreeTerraForged 1.21.1 as its architectural reference. Both expose a dedicated
+`world/worldgen/cell/climate` package containing `Climate.java` and
+`ClimateModule.java`. ReTerraForged's `Climate` applies biome/climate data to `Cell`,
+uses `biomeRegionEdge` for boundary shaping, and offsets samples near region edges.
+
+FlTerraForged-Engine retains the engine-relevant concepts only:
+
+- independent macro climate regions and a normalized region-edge signal;
+- continuous temperature and moisture fields;
+- smooth region-boundary transitions;
+- terrain-aware climate feedback.
+
+Minecraft `HolderGetter`, preset codecs/settings, biome objects, control points and
+biome-source integration are deliberately excluded. The implementation is rewritten
+under `dev.foucaultleon.flterraforged.engine.climate` and returns only semantic signals
+through the shared `Cell` and Engine API `ClimateSample`.

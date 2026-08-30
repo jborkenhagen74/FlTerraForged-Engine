@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.0-SNAPSHOT-r13
+
+- Added the seventh migrated engine foundation: `climate`.
+- Replaced the bootstrap two-noise climate sampler with a dedicated `ClimateModel` cell stage.
+- Added deterministic jittered-Voronoi `ClimateRegionSampler`/`ClimateRegionSample` for semantic biome-region hints.
+- Added smooth neighboring climate-region blending instead of hard region boundaries.
+- Added altitude cooling, continental/interior drying, coastal temperature moderation and river-local moisture feedback.
+- Climate now writes `regionTemperature`, `regionMoisture`, `biomeRegionId`, `biomeRegionEdge`, `macroBiomeId`, `temperature` and `moisture` into the shared `Cell`.
+- Added configurable climate region scale/jitter/blend and terrain-feedback strengths.
+- Added climate determinism, bounds, altitude, river-moisture, semantic-cell and concurrent-sampling tests.
+- Added `MIGRATION-CLIMATE.md`; Minecraft biome selection, TerraBlender and registries remain outside the engine.
+
 ## 0.1.0-SNAPSHOT-r12
 
 - Replaced the bootstrap independent river-noise field with terrain-driven River/Rivermap hydrology.

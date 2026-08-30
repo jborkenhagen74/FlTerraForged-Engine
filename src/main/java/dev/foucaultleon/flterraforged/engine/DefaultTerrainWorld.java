@@ -8,6 +8,8 @@ import dev.foucaultleon.flterraforged.engine.api.terrain.TerrainSample;
 import dev.foucaultleon.flterraforged.engine.api.terrain.TerrainType;
 import dev.foucaultleon.flterraforged.engine.cell.Cell;
 import dev.foucaultleon.flterraforged.engine.climate.ClimateModel;
+import dev.foucaultleon.flterraforged.engine.climate.ClimateRegionSampler;
+import dev.foucaultleon.flterraforged.engine.climate.ClimateSettings;
 import dev.foucaultleon.flterraforged.engine.continent.AdvancedContinent;
 import dev.foucaultleon.flterraforged.engine.continent.Continent;
 import dev.foucaultleon.flterraforged.engine.continent.ContinentSettings;
@@ -104,10 +106,18 @@ public final class DefaultTerrainWorld implements TerrainWorld {
                 (x, z, target) -> populator.populate(target, x, z),
                 RiverSettings.from(settings));
         this.terrain = new TerrainModel(context, this.river);
+        ClimateSettings climateSettings = ClimateSettings.from(settings);
+        ClimateRegionSampler climateRegions = new ClimateRegionSampler(
+                seed ^ 0xC6BC279692B5C323L,
+                climateSettings.regionScale(),
+                climateSettings.regionJitter());
         this.climate = new ClimateModel(
+                context,
+                this.river,
                 temperatureNoise,
                 moistureNoise,
-                settings.climateScale());
+                climateRegions,
+                climateSettings);
         this.classifier = new TerrainClassifier();
     }
 
@@ -131,7 +141,8 @@ public final class DefaultTerrainWorld implements TerrainWorld {
     /** {@inheritDoc} */
     @Override
     public TerrainSample sample(int x, int z) {
-        Cell center = terrain.sampleCell(x, z);
+        Cell center = new Cell();
+        climate.lookup(x, z, center);
         double west = terrain.surfaceHeight(x - 1, z);
         double east = terrain.surfaceHeight(x + 1, z);
         double north = terrain.surfaceHeight(x, z - 1);
@@ -142,7 +153,7 @@ public final class DefaultTerrainWorld implements TerrainWorld {
         center.gradient = slope;
 
         double continentalness = center.continentEdge * 2.0D - 1.0D;
-        ClimateSample climateSample = climate.sample(x, z, center.height, context.seaLevel());
+        ClimateSample climateSample = new ClimateSample(center.temperature, center.moisture);
         RiverSample riverSample = river.sample(x, z);
         TerrainType type = classifier.classify(
                 center.terrain,

@@ -17,7 +17,14 @@ import java.util.Objects;
  * @param terrainRegionScale spatial frequency of terrain-region partitioning
  * @param terrainRegionJitter fractional displacement of terrain-region points
  * @param terrainBlendWidth normalized blend width around terrain-region boundaries
- * @param climateScale spatial scale of temperature and moisture fields
+ * @param climateScale spatial scale of broad temperature and moisture fields
+ * @param climateRegionScale spatial frequency of macro climate-region partitioning
+ * @param climateRegionJitter fractional displacement of climate-region points
+ * @param climateRegionBlend normalized climate-region boundary blend width
+ * @param climateAltitudeCooling temperature reduction per 256 blocks above sea level
+ * @param climateContinentalDryness moisture reduction toward continental interiors
+ * @param climateRiverMoisture moisture bonus at river centerlines
+ * @param climateOceanModeration coastal temperature moderation strength
  * @param riverScale hydrology density scale used to derive drainage-grid spacing
  * @param relief base continental relief in blocks
  * @param mountainRelief additional mountain relief in blocks
@@ -40,6 +47,13 @@ public record EngineSettings(
         double terrainRegionJitter,
         double terrainBlendWidth,
         double climateScale,
+        double climateRegionScale,
+        double climateRegionJitter,
+        double climateRegionBlend,
+        double climateAltitudeCooling,
+        double climateContinentalDryness,
+        double climateRiverMoisture,
+        double climateOceanModeration,
         double riverScale,
         double relief,
         double mountainRelief,
@@ -68,6 +82,13 @@ public record EngineSettings(
                 0.82D,
                 0.28D,
                 0.00080D,
+                0.00022D,
+                0.86D,
+                0.34D,
+                0.18D,
+                0.55D,
+                0.22D,
+                0.55D,
                 0.00110D,
                 36.0D,
                 52.0D,
@@ -101,6 +122,13 @@ public record EngineSettings(
                 unit(config, "terrainRegionJitter", d.terrainRegionJitter),
                 positiveUnit(config, "terrainBlendWidth", d.terrainBlendWidth),
                 positive(config, "climateScale", d.climateScale),
+                positive(config, "climateRegionScale", d.climateRegionScale),
+                unit(config, "climateRegionJitter", d.climateRegionJitter),
+                positiveUnit(config, "climateRegionBlend", d.climateRegionBlend),
+                nonNegative(config, "climateAltitudeCooling", d.climateAltitudeCooling),
+                unit(config, "climateContinentalDryness", d.climateContinentalDryness),
+                unit(config, "climateRiverMoisture", d.climateRiverMoisture),
+                unit(config, "climateOceanModeration", d.climateOceanModeration),
                 positive(config, "riverScale", d.riverScale),
                 positive(config, "relief", d.relief),
                 positive(config, "mountainRelief", d.mountainRelief),

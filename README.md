@@ -104,7 +104,7 @@ dev.foucaultleon:flterraforged-engine:0.1.0-SNAPSHOT
 
 ## Current implementation
 
-`0.1.0-SNAPSHOT-r12` contains the first six migrated engine foundations:
+`0.1.0-SNAPSHOT-r13` contains the first seven migrated engine foundations:
 
 1. **Noise** — seed-aware modular scalar fields, interpolation, gradient/value
    sources, octave composition, arithmetic modules, curve/distance functions and
@@ -128,7 +128,11 @@ dev.foucaultleon:flterraforged-engine:0.1.0-SNAPSHOT
    bounded map caching and post-erosion river incision. `Cell.riverMask` represents
    centerline-to-bank proximity while `Cell.height` becomes the final river-shaped
    surface.
+7. **Climate** — broad continuous temperature/moisture fields, jittered macro climate
+   regions, smooth region-boundary blending, altitude cooling, continental/coastal
+   moisture effects and river-local moisture. Climate writes semantic region signals
+   into `Cell` but deliberately does not select Minecraft biomes.
 
-The active terrain flow is now continent → terrain → erosion → river. Climate is
-sampled independently after terrain shaping. Lakes, waterfalls, public river-water
-elevation and Minecraft water/surface placement remain later integration work.
+The active world flow is now continent → terrain → erosion → river → climate. Lakes,
+waterfalls, public river-water elevation, biome routing and Minecraft water/surface
+placement remain later integration work.

@@ -84,7 +84,7 @@ later functional stages:
 - `cell/terrain` -> terrain migration;
 - `cell/filter` -> terrain/erosion migration;
 - `cell/rivermap` -> river migration;
-- `cell/climate` -> climate migration;
+- `cell/climate` -> migrated in r13 as a Minecraft-neutral climate stage;
 - `cell/biome/type` -> not copied into the external engine as a Minecraft biome
   model; only generic climate/region signals will remain engine-side.
 
