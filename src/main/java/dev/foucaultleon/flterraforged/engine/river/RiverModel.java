@@ -66,11 +66,17 @@ public final class RiverModel implements CellLookup {
         RiverHit hit = nearest(x, z);
         if (!hit.present()) {
             target.riverMask = 1.0D;
+            target.riverDistance = settings.regionSize() * 2.0D;
+            target.riverWidth = settings.minimumWidth();
+            target.riverDepth = 0.0D;
             target.height = target.heightErosion;
             return;
         }
         double halfWidth = Math.max(0.5D, hit.width() * 0.5D);
         target.riverMask = Maths.smooth(Maths.clamp(hit.distance() / halfWidth, 0.0D, 1.0D));
+        target.riverDistance = hit.distance();
+        target.riverWidth = hit.width();
+        target.riverDepth = hit.depth();
         target.height = Maths.clamp(
                 target.heightErosion - hit.depth(),
                 world.minY() + 1.0D,

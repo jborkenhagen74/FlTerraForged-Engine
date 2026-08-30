@@ -218,3 +218,21 @@ https://raw.githubusercontent.com/jborkenhagen74/FlTerraForged/maven/
 ```
 
 No GitHub Packages credential is part of the Engine API contract.
+
+### Integrated pipeline composition (r14)
+
+The seven migrated foundations are now composed by a single `WorldgenPipeline`. This class is the
+world-seed-bound composition root and owns the stage order `continent -> terrain -> erosion ->
+river -> climate`. `DefaultTerrainWorld` no longer constructs stage dependencies itself and only
+projects pipeline results to the stable Engine API.
+
+The integration also closes a previous internal data gap: `RiverModel` writes nearest-channel
+`riverDistance`, `riverWidth` and local `riverDepth` into the shared `Cell`, allowing climate and the
+final API projection to reuse exactly the same hydrology result without an additional Rivermap
+query. Final slope is calculated after river shaping while `heightErosion` retains the pre-river
+surface for downstream comparisons.
+
+Cross-stage defaults are grouped into `EnginePreset` profiles (`BALANCED`, `GENTLE`, `RUGGED`).
+Numeric EngineConfig values still override individual profile fields. Semantic ocean/coast/river
+classification is coordinated through `TerrainClassificationSettings.from(EngineSettings)` rather
+than a separate set of unrelated constants.

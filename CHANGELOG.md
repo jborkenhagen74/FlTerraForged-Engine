@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.0-SNAPSHOT-r14
+
+- Combined continent, terrain, erosion, river/rivermap and climate under a single immutable `WorldgenPipeline` composition root.
+- Simplified `DefaultTerrainWorld` so it delegates complete sampling to the integrated pipeline.
+- Added `EnginePreset` with coordinated `balanced`, `gentle` and `rugged` defaults; explicit numeric EngineConfig keys override the selected preset.
+- Retuned terrain-region scale/blending so large continents contain several landforms while gentle/rugged profiles retain distinct transition styles.
+- Added `TerrainClassificationSettings` derived from Engine settings for coordinated ocean/coast/river semantic thresholds.
+- Extended the shared `Cell` with `riverDistance`, `riverWidth` and `riverDepth`; final `RiverSample` no longer requires a second Rivermap query.
+- Added full-pipeline Cell invariants, API-projection, preset-override and concurrent determinism tests.
+- Added `MIGRATION-PIPELINE.md` documenting stage ownership, data contracts, presets and remaining integration boundaries.
+
 ## 0.1.0-SNAPSHOT-r13
 
 - Added the seventh migrated engine foundation: `climate`.

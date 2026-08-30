@@ -23,11 +23,17 @@ final class CellFoundationTest {
         cell.erosion = 0.8D;
         cell.moisture = 0.1D;
         cell.riverMask = 0.0D;
+        cell.riverDistance = 12.0D;
+        cell.riverWidth = 8.0D;
+        cell.riverDepth = 3.0D;
         cell.reset();
         assertEquals(0.0D, cell.height);
         assertEquals(0.0D, cell.erosion);
         assertEquals(0.5D, cell.moisture);
         assertEquals(1.0D, cell.riverMask);
+        assertTrue(Double.isInfinite(cell.riverDistance));
+        assertEquals(0.0D, cell.riverWidth);
+        assertEquals(0.0D, cell.riverDepth);
     }
 
     @Test

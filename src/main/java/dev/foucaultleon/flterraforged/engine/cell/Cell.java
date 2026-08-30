@@ -40,6 +40,12 @@ public final class Cell {
     public double macroBiomeId;
     /** River mask where one represents unaffected terrain and zero represents river center. */
     public double riverMask;
+    /** Distance in blocks to the nearest river centerline. */
+    public double riverDistance;
+    /** Full width in blocks of the nearest river channel. */
+    public double riverWidth;
+    /** Incision depth in blocks contributed by the nearest river channel. */
+    public double riverDepth;
     /** Continent-cell X coordinate. */
     public int continentX;
     /** Continent-cell Z coordinate. */
@@ -84,6 +90,9 @@ public final class Cell {
         biomeRegionEdge = other.biomeRegionEdge;
         macroBiomeId = other.macroBiomeId;
         riverMask = other.riverMask;
+        riverDistance = other.riverDistance;
+        riverWidth = other.riverWidth;
+        riverDepth = other.riverDepth;
         continentX = other.continentX;
         continentZ = other.continentZ;
         erosionMask = other.erosionMask;
@@ -115,6 +124,9 @@ public final class Cell {
         biomeRegionEdge = 1.0D;
         macroBiomeId = 0.0D;
         riverMask = 1.0D;
+        riverDistance = Double.POSITIVE_INFINITY;
+        riverWidth = 0.0D;
+        riverDepth = 0.0D;
         continentX = 0;
         continentZ = 0;
         erosionMask = false;

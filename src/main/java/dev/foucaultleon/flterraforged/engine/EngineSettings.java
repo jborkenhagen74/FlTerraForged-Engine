@@ -4,7 +4,11 @@ import dev.foucaultleon.flterraforged.engine.api.EngineConfig;
 import java.util.Objects;
 
 /**
- * Parsed and validated engine configuration.
+ * Parsed and validated engine configuration shared by all world-generation stages.
+ *
+ * <p>The configuration deliberately uses a compact set of cross-stage controls. More detailed
+ * hydraulic, drainage and climate constants are derived by their respective stage settings so the
+ * public engine configuration does not expose implementation noise.</p>
  *
  * @param continentScale base spatial frequency used to derive tectonic continent-cell size
  * @param continentJitter fractional displacement of tectonic continent points
@@ -64,51 +68,61 @@ public record EngineSettings(
         double erosionMaxDelta) {
 
     /**
-     * Returns the default engine settings.
+     * Returns the balanced default settings.
      *
-     * @return default settings
+     * @return balanced settings
      */
     public static EngineSettings defaults() {
-        return new EngineSettings(
-                0.00055D,
-                0.85D,
-                0.0D,
-                0.25D,
-                0.33D,
-                0.30D,
-                0.00170D,
-                0.00800D,
-                0.00042D,
-                0.82D,
-                0.28D,
-                0.00080D,
-                0.00022D,
-                0.86D,
-                0.34D,
-                0.18D,
-                0.55D,
-                0.22D,
-                0.55D,
-                0.00110D,
-                36.0D,
-                52.0D,
-                7.0D,
-                0.72D,
-                0.55D,
-                0.16D,
-                5.0D);
+        return preset(EnginePreset.BALANCED);
     }
 
     /**
-     * Parses engine settings from the generic engine configuration.
+     * Returns the tuned settings for a built-in preset.
+     *
+     * @param preset requested preset
+     * @return preset settings
+     */
+    public static EngineSettings preset(EnginePreset preset) {
+        Objects.requireNonNull(preset, "preset");
+        return switch (preset) {
+            case BALANCED -> new EngineSettings(
+                    0.00050D, 0.82D, 0.0D, 0.20D, 0.27D, 0.24D,
+                    0.00145D, 0.00650D, 0.00055D, 0.78D, 0.36D,
+                    0.00062D, 0.00018D, 0.82D, 0.42D,
+                    0.16D, 0.42D, 0.20D, 0.48D,
+                    0.00095D, 34.0D, 56.0D, 6.5D,
+                    0.62D, 0.52D, 0.14D, 4.5D);
+            case GENTLE -> new EngineSettings(
+                    0.00048D, 0.75D, 0.0D, 0.15D, 0.20D, 0.18D,
+                    0.00120D, 0.00500D, 0.00042D, 0.72D, 0.44D,
+                    0.00058D, 0.00016D, 0.76D, 0.48D,
+                    0.14D, 0.38D, 0.18D, 0.52D,
+                    0.00080D, 24.0D, 36.0D, 5.0D,
+                    0.44D, 0.50D, 0.10D, 3.5D);
+            case RUGGED -> new EngineSettings(
+                    0.00058D, 0.88D, 0.0D, 0.28D, 0.35D, 0.34D,
+                    0.00180D, 0.00900D, 0.00072D, 0.88D, 0.30D,
+                    0.00075D, 0.00022D, 0.88D, 0.34D,
+                    0.19D, 0.48D, 0.24D, 0.42D,
+                    0.00125D, 42.0D, 72.0D, 8.5D,
+                    0.82D, 0.58D, 0.18D, 6.0D);
+        };
+    }
+
+    /**
+     * Parses settings from the generic engine configuration.
+     *
+     * <p>The optional {@code preset} key selects the base profile first; explicit numeric keys then
+     * override individual values. This makes presets convenient without preventing precise tuning.</p>
      *
      * @param config source configuration
      * @return validated settings
-     * @throws IllegalArgumentException if a configured numeric value is invalid
+     * @throws IllegalArgumentException if a configured value is invalid
      */
     public static EngineSettings from(EngineConfig config) {
         Objects.requireNonNull(config, "config");
-        EngineSettings d = defaults();
+        EnginePreset selected = EnginePreset.parse(config.getOrDefault("preset", "balanced"));
+        EngineSettings d = preset(selected);
         return new EngineSettings(
                 positive(config, "continentScale", d.continentScale),
                 unit(config, "continentJitter", d.continentJitter),

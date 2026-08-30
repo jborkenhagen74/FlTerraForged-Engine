@@ -104,7 +104,7 @@ dev.foucaultleon:flterraforged-engine:0.1.0-SNAPSHOT
 
 ## Current implementation
 
-`0.1.0-SNAPSHOT-r13` contains the first seven migrated engine foundations:
+`0.1.0-SNAPSHOT-r14` combines the seven migrated foundations into one coordinated pipeline:
 
 1. **Noise** — seed-aware modular scalar fields, interpolation, gradient/value
    sources, octave composition, arithmetic modules, curve/distance functions and
@@ -133,6 +133,38 @@ dev.foucaultleon:flterraforged-engine:0.1.0-SNAPSHOT
    moisture effects and river-local moisture. Climate writes semantic region signals
    into `Cell` but deliberately does not select Minecraft biomes.
 
-The active world flow is now continent → terrain → erosion → river → climate. Lakes,
-waterfalls, public river-water elevation, biome routing and Minecraft water/surface
+The active world flow is now assembled exclusively by `WorldgenPipeline`:
+
+```text
+continent -> terrain -> erosion -> river/rivermap -> climate -> API sample
+```
+
+`DefaultTerrainWorld` delegates to that composition root instead of wiring stages itself.
+The shared `Cell` now carries final river distance/width/depth in addition to the river mask,
+so the API projection does not perform a duplicate Rivermap lookup.
+
+### Pipeline presets
+
+The optional EngineConfig key `preset` selects coordinated defaults before individual numeric
+overrides are applied:
+
+```text
+balanced  default; broad continents, varied relief, moderate erosion/hydrology
+gentle    softer relief, wider blends, gentler erosion, sparser rivers
+rugged    stronger relief, tighter transitions, denser rivers, stronger erosion
+```
+
+For example, an integration layer can pass:
+
+```text
+preset=rugged
+mountainRelief=61.5
+erosionStrength=0.31
+```
+
+The two numeric values override only those fields while the remaining values still come from
+`rugged`. Terrain classification thresholds are derived from the same pipeline settings rather
+than being unrelated hard-coded constants.
+
+Lakes, waterfalls, public river-water elevation, biome routing and Minecraft water/surface
 placement remain later integration work.
