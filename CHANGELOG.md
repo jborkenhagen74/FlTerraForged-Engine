@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.0-SNAPSHOT-r3
+
+- Converted `EngineSmokeTest` from a standalone `main()` program to JUnit 5.
+- Added JUnit Jupiter and the JUnit Platform launcher to the test classpath.
+- Removed the duplicate `JavaExec` smoke-test path; `check` now uses Gradle's standard `test` lifecycle.
+- Build workflow checks `develop` and `main`; snapshot publishing remains limited to `develop`.
+
 ## 0.1.0-SNAPSHOT-r1
 
 - Fixed CI bootstrap of `flterraforged-engine-api:0.1.0-SNAPSHOT`.

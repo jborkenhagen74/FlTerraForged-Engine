@@ -62,6 +62,13 @@ dependencies {
     api("dev.foucaultleon:flterraforged-engine-api:${engineApiVersion}") {
         changing = engineApiVersion.endsWith('-SNAPSHOT')
     }
+
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.10.2'
+}
+
+tasks.named('test', Test) {
+    useJUnitPlatform()
 }
 
 configurations.configureEach {
@@ -110,19 +117,9 @@ tasks.register('verifyServiceProvider') {
     }
 }
 
-tasks.register('smokeTest', JavaExec) {
-    group = 'verification'
-    description = 'Runs deterministic, concurrency and ServiceLoader checks without Minecraft.'
-    dependsOn testClasses
-    classpath = sourceSets.test.runtimeClasspath
-    mainClass = 'dev.foucaultleon.flterraforged.engine.EngineSmokeTest'
-    jvmArgs '-ea'
-}
-
 tasks.named('check') {
     dependsOn 'verifyEngineIsolation'
     dependsOn 'verifyServiceProvider'
-    dependsOn 'smokeTest'
 }
 
 publishing {
