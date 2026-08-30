@@ -70,61 +70,150 @@ public final class AdvancedContinent implements Continent {
     /** {@inheritDoc} */
     @Override
     public ContinentSample sample(double worldX, double worldZ) {
-        Vector2 warped = warp.transform(worldX, worldZ, seed);
-        double x = warped.x() * frequency;
-        double z = warped.z() * frequency;
-        int xi = NoiseMath.floor(x);
-        int zi = NoiseMath.floor(z);
-
-        int ownerX = xi;
-        int ownerZ = zi;
-        Vector2 ownerPoint = new Vector2(x, z);
-        double nearestSq = Double.POSITIVE_INFINITY;
-
-        for (int cz = zi - 1; cz <= zi + 1; cz++) {
-            for (int cx = xi - 1; cx <= xi + 1; cx++) {
-                Vector2 point = cellPoint(cx, cz);
-                double distSq = distanceSq(x, z, point.x(), point.z());
-                if (distSq < nearestSq) {
-                    nearestSq = distSq;
-                    ownerX = cx;
-                    ownerZ = cz;
-                    ownerPoint = point;
-                }
-            }
-        }
-
-        double borderSq = Double.POSITIVE_INFINITY;
-        double sumX = 0.0D;
-        double sumZ = 0.0D;
-        int neighbors = 0;
-        for (int cz = ownerZ - 1; cz <= ownerZ + 1; cz++) {
-            for (int cx = ownerX - 1; cx <= ownerX + 1; cx++) {
-                if (cx == ownerX && cz == ownerZ) {
-                    continue;
-                }
-                Vector2 other = cellPoint(cx, cz);
-                sumX += other.x();
-                sumZ += other.z();
-                neighbors++;
-                borderSq = Math.min(borderSq, distanceToBisectorSq(x, z, ownerPoint, other));
-            }
-        }
-
-        boolean skipped = shouldSkip(ownerX, ownerZ);
-        double edge = skipped ? 0.0D : edgeValue(worldX, worldZ, ownerX, ownerZ, borderSq);
-        double id = unitCellValue(ID_SEED, ownerX, ownerZ);
-        double averageX = neighbors == 0 ? ownerPoint.x() : sumX / neighbors;
-        double averageZ = neighbors == 0 ? ownerPoint.z() : sumZ / neighbors;
-        int centerX = correctedCenter(ownerPoint.x(), averageX);
-        int centerZ = correctedCenter(ownerPoint.z(), averageZ);
+        ContinentCell cell = sampleCell(worldX, worldZ);
+        ContinentPoint owner = cell.owner();
+        double edge = cell.skipped()
+                ? 0.0D
+                : edgeValue(worldX, worldZ, owner.cellX(), owner.cellZ(), cell.borderDistanceSquared());
+        double id = unitCellValue(ID_SEED, owner.cellX(), owner.cellZ());
+        int centerX = correctedCenter(owner.x(), cell.neighborAverageX());
+        int centerZ = correctedCenter(owner.z(), cell.neighborAverageZ());
         return new ContinentSample(id, edge, new ContinentCenter(centerX, centerZ));
     }
 
-    private Vector2 cellPoint(int cellX, int cellZ) {
+    /**
+     * Resolves the full advanced-continent geometric workspace for a position.
+     *
+     * @param worldX world X coordinate
+     * @param worldZ world Z coordinate
+     * @return newly allocated populated continent cell
+     */
+    public ContinentCell sampleCell(double worldX, double worldZ) {
+        return sampleCell(worldX, worldZ, new ContinentCell());
+    }
+
+    /**
+     * Resolves the full advanced-continent geometric workspace into caller-owned storage.
+     *
+     * @param worldX world X coordinate
+     * @param worldZ world Z coordinate
+     * @param target reusable target workspace
+     * @return {@code target}
+     */
+    public ContinentCell sampleCell(double worldX, double worldZ, ContinentCell target) {
+        Objects.requireNonNull(target, "target").reset();
+        Vector2 warped = warp.transform(worldX, worldZ, seed);
+        double x = warped.x() * frequency;
+        double z = warped.z() * frequency;
+        target.setSample(x, z);
+
+        int xi = NoiseMath.floor(x);
+        int zi = NoiseMath.floor(z);
+        for (int cz = zi - 1; cz <= zi + 1; cz++) {
+            for (int cx = xi - 1; cx <= xi + 1; cx++) {
+                ContinentPoint point = cellPoint(cx, cz);
+                target.considerOwner(point, distanceSq(x, z, point.x(), point.z()));
+            }
+        }
+
+        ContinentPoint owner = target.owner();
+        if (owner == null) {
+            throw new IllegalStateException("No continent owner resolved");
+        }
+        for (int cz = owner.cellZ() - 1; cz <= owner.cellZ() + 1; cz++) {
+            for (int cx = owner.cellX() - 1; cx <= owner.cellX() + 1; cx++) {
+                if (cx == owner.cellX() && cz == owner.cellZ()) {
+                    continue;
+                }
+                ContinentPoint neighbor = cellPoint(cx, cz);
+                double boundary = distanceToBisectorSq(x, z, owner, neighbor);
+                target.considerNeighbor(neighbor, boundary);
+            }
+        }
+        target.setSkipped(shouldSkip(owner.cellX(), owner.cellZ()));
+        return target;
+    }
+
+    /**
+     * Estimates the world-space distance from a continent center to its Voronoi boundary along a
+     * direction.
+     *
+     * @param center stable continent center
+     * @param directionX ray X direction
+     * @param directionZ ray Z direction
+     * @return distance in blocks to the owner change
+     */
+    public double distanceToEdge(ContinentCenter center, double directionX, double directionZ) {
+        Objects.requireNonNull(center, "center");
+        Vector2 direction = normalizedDirection(directionX, directionZ);
+        ContinentPoint owner = sampleCell(center.x(), center.z()).owner();
+        double low = 0.0D;
+        double high = settings.cellSize() * 4.0D;
+
+        for (int i = 0; i < 10; i++) {
+            if (!sameOwner(owner, center.x() + direction.x() * high, center.z() + direction.z() * high)) {
+                break;
+            }
+            low = high;
+            high *= 2.0D;
+        }
+
+        for (int i = 0; i < 64 && high - low > 1.0D; i++) {
+            double mid = (low + high) * 0.5D;
+            double x = center.x() + direction.x() * mid;
+            double z = center.z() + direction.z() * mid;
+            if (sameOwner(owner, x, z)) {
+                low = mid;
+            } else {
+                high = mid;
+            }
+        }
+        return high;
+    }
+
+    /**
+     * Estimates the distance from a continent center to the first point where the normalized edge
+     * signal reaches a requested ocean-like threshold.
+     *
+     * <p>The threshold is engine-neutral. FlTerraForged may later map its own shallow-ocean control
+     * point to this parameter without coupling the engine to Minecraft or biome settings.</p>
+     *
+     * @param center stable continent center
+     * @param directionX ray X direction
+     * @param directionZ ray Z direction
+     * @param edgeThreshold normalized edge threshold in {@code [0, 1]}
+     * @return distance in blocks to the threshold crossing
+     */
+    public double distanceToEdgeThreshold(
+            ContinentCenter center,
+            double directionX,
+            double directionZ,
+            double edgeThreshold) {
+        if (!Double.isFinite(edgeThreshold) || edgeThreshold < 0.0D || edgeThreshold > 1.0D) {
+            throw new IllegalArgumentException("edgeThreshold must be finite and in [0, 1]");
+        }
+        Vector2 direction = normalizedDirection(directionX, directionZ);
+        double low = 0.0D;
+        double high = distanceToEdge(center, direction.x(), direction.z());
+        for (int i = 0; i < 64 && high - low > 1.0D; i++) {
+            double mid = (low + high) * 0.5D;
+            double x = center.x() + direction.x() * mid;
+            double z = center.z() + direction.z() * mid;
+            if (edgeValue(x, z) > edgeThreshold) {
+                low = mid;
+            } else {
+                high = mid;
+            }
+        }
+        return high;
+    }
+
+    private ContinentPoint cellPoint(int cellX, int cellZ) {
         double ox = unitCellValue(CELL_SEED, cellX, cellZ) - 0.5D;
         double oz = unitCellValue(CELL_Z_SEED, cellX, cellZ) - 0.5D;
-        return new Vector2(
+        return new ContinentPoint(
+                cellX,
+                cellZ,
                 cellX + 0.5D + ox * settings.jitter(),
                 cellZ + 0.5D + oz * settings.jitter());
     }
@@ -169,13 +258,29 @@ public final class AdvancedContinent implements Continent {
         return 0.5D + NoiseMath.value(seed ^ salt, cellX, cellZ) * 0.5D;
     }
 
+    private boolean sameOwner(ContinentPoint expected, double worldX, double worldZ) {
+        ContinentPoint actual = sampleCell(worldX, worldZ).owner();
+        return actual.cellX() == expected.cellX() && actual.cellZ() == expected.cellZ();
+    }
+
+    private static Vector2 normalizedDirection(double x, double z) {
+        if (!Double.isFinite(x) || !Double.isFinite(z)) {
+            throw new IllegalArgumentException("direction must be finite");
+        }
+        double length = Math.hypot(x, z);
+        if (length == 0.0D) {
+            throw new IllegalArgumentException("direction must be non-zero");
+        }
+        return new Vector2(x / length, z / length);
+    }
+
     private static double distanceSq(double x, double z, double px, double pz) {
         double dx = x - px;
         double dz = z - pz;
         return dx * dx + dz * dz;
     }
 
-    private static double distanceToBisectorSq(double x, double z, Vector2 a, Vector2 b) {
+    private static double distanceToBisectorSq(double x, double z, ContinentPoint a, ContinentPoint b) {
         double mx = (a.x() + b.x()) * 0.5D;
         double mz = (a.z() + b.z()) * 0.5D;
         double dx = b.x() - a.x();

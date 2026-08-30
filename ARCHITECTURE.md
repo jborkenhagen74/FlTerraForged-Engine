@@ -73,9 +73,16 @@ parallel chunk-generation use.
 The first real cell-generation stage is now present. `AdvancedContinent` uses a
 warped, jittered Voronoi partition to calculate a stable continent owner,
 world-space center and normalized inward distance from ocean-producing cell
-boundaries. It implements `CellPopulator`, but also exposes immutable
+boundaries. Its dedicated caller-owned `ContinentCell` stores transient Voronoi
+geometry such as the owner point, closest boundary neighbor, boundary distance
+and neighbor centroid. The finished values are then copied into the general
+engine `cell.Cell`, which continues through later generation stages.
+
+`AdvancedContinent` implements `CellPopulator`, but also exposes immutable
 `ContinentSample` values so hot-path terrain sampling does not require shared
-mutable cell ownership.
+mutable cell ownership. Directional boundary and normalized edge-threshold
+searches are available without importing ReTerraForged river caches or
+Minecraft control points.
 
 The active `TerrainModel` consumes this continent signal directly. The former
 bootstrap fractal-continent field has been removed from active terrain shaping.

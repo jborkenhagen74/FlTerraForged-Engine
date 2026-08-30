@@ -62,6 +62,43 @@ final class ContinentFoundationTest {
         assertTrue(max > 0.85D, "expected deep continent interiors");
     }
 
+
+    @Test
+    void advancedContinentCellExposesVoronoiWorkspace() {
+        AdvancedContinent continent = advanced(445566L);
+        ContinentCell cell = continent.sampleCell(1234.5D, -987.25D);
+        assertTrue(cell.owner() != null, "expected owner point");
+        assertTrue(cell.nearestNeighbor() != null, "expected nearest boundary neighbor");
+        assertEquals(8, cell.neighborCount());
+        assertTrue(Double.isFinite(cell.ownerDistanceSquared()));
+        assertTrue(Double.isFinite(cell.borderDistanceSquared()));
+        assertTrue(cell.borderDistanceSquared() >= 0.0D);
+    }
+
+    @Test
+    void callerOwnedContinentCellCanBeReused() {
+        AdvancedContinent continent = advanced(123L);
+        ContinentCell target = new ContinentCell();
+        ContinentCell first = continent.sampleCell(100.0D, 200.0D, target);
+        ContinentPoint firstOwner = first.owner();
+        ContinentCell second = continent.sampleCell(9000.0D, -7000.0D, target);
+        assertTrue(first == target);
+        assertTrue(second == target);
+        assertTrue(second.owner() != null);
+        assertNotEquals(firstOwner, second.owner());
+    }
+
+    @Test
+    void directionalBoundarySearchReturnsFiniteDistances() {
+        AdvancedContinent continent = advanced(99112233L);
+        ContinentCenter center = continent.nearestCenter(2048.0D, -4096.0D);
+        double boundary = continent.distanceToEdge(center, 1.0D, 0.35D);
+        double shallow = continent.distanceToEdgeThreshold(center, 1.0D, 0.35D, 0.2D);
+        assertTrue(Double.isFinite(boundary) && boundary > 0.0D);
+        assertTrue(Double.isFinite(shallow) && shallow >= 0.0D);
+        assertTrue(shallow <= boundary + 1.0D);
+    }
+
     @Test
     void concurrentSamplingIsStable() throws Exception {
         Continent continent = continent(99887766L);
@@ -87,6 +124,10 @@ final class ContinentFoundationTest {
     }
 
     private static Continent continent(long seed) {
+        return advanced(seed);
+    }
+
+    private static AdvancedContinent advanced(long seed) {
         return new AdvancedContinent(seed, ContinentSettings.from(EngineSettings.defaults()));
     }
 }

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.0-SNAPSHOT-r9
+
+- Completed the advanced continent foundation with a dedicated caller-owned `ContinentCell` workspace.
+- Added `ContinentPoint` for deterministic jittered tectonic-grid points.
+- `ContinentCell` now records warped sample coordinates, owner point, nearest boundary neighbor, owner distance, boundary distance, neighbor centroid/count and skipping state.
+- Refactored `AdvancedContinent.sample(...)` to derive its final immutable sample from the specialized continent workspace.
+- Added reusable `sampleCell(..., target)` sampling without hidden ThreadLocal/global pools.
+- Added directional `distanceToEdge(...)` and engine-neutral `distanceToEdgeThreshold(...)` searches inspired by ReTerraForged's advanced continent helpers without importing control points or river caches.
+- Added tests/smoke checks for continent workspace geometry, reuse, boundary search, determinism and Java 17/Javadoc strictness.
+- Documented the distinction between specialized `ContinentCell` geometry and the general cross-stage engine `cell.Cell`.
+
 ## 0.1.0-SNAPSHOT-r8
 
 - Added the third migrated engine foundation: `continent`.
