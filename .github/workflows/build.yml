@@ -4,7 +4,11 @@ on:
   push:
     branches: [ develop, main ]
   pull_request:
+    branches: [ develop, main ]
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   check:
@@ -12,58 +16,58 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: '9.7.1'
 
       - name: Verify layout
         run: python3 tools/verify-layout.py
 
-      - name: Build and test against published Engine API
+      - name: Build and test against public Engine API Maven repository
         run: gradle --no-daemon --refresh-dependencies clean check
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          FLTERRAFORGED_PACKAGES_USER: ${{ secrets.FLTERRAFORGED_PACKAGES_USER }}
-          FLTERRAFORGED_PACKAGES_TOKEN: ${{ secrets.FLTERRAFORGED_PACKAGES_TOKEN }}
 
-  publish-engine:
+  publish-engine-snapshot:
     name: Publish Engine Snapshot
     if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
     needs: check
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      packages: write
+      contents: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: '9.7.1'
 
-      - name: Publish Engine to GitHub Packages
+      - name: Build Maven repository
         run: gradle --no-daemon --refresh-dependencies publish
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          FLTERRAFORGED_PACKAGES_USER: ${{ secrets.FLTERRAFORGED_PACKAGES_USER }}
-          FLTERRAFORGED_PACKAGES_TOKEN: ${{ secrets.FLTERRAFORGED_PACKAGES_TOKEN }}
+
+      - name: Publish Maven repository branch
+        uses: peaceiris/actions-gh-pages@v4.1.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: maven
+          publish_dir: ./build/maven-repository
+          keep_files: true
+          force_orphan: false
+          commit_message: "Publish Engine ${{ github.sha }}"

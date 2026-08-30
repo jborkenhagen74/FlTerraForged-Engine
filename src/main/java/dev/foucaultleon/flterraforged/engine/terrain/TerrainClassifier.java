@@ -3,16 +3,32 @@ package dev.foucaultleon.flterraforged.engine.terrain;
 import dev.foucaultleon.flterraforged.engine.api.river.RiverSample;
 import dev.foucaultleon.flterraforged.engine.api.terrain.StandardTerrainTypes;
 import dev.foucaultleon.flterraforged.engine.api.terrain.TerrainType;
+import java.util.Objects;
 
 /** Converts numeric terrain signals into loader-independent semantic terrain ids. */
 public final class TerrainClassifier {
 
+    /** Creates a terrain classifier using the bootstrap thresholds. */
+    public TerrainClassifier() {
+    }
+
+    /**
+     * Classifies a terrain position.
+     *
+     * @param height surface height
+     * @param seaLevel world sea level
+     * @param slope local terrain slope
+     * @param continentalness continentalness signal
+     * @param river river sample
+     * @return semantic terrain type
+     */
     public TerrainType classify(
             double height,
             int seaLevel,
             double slope,
             double continentalness,
             RiverSample river) {
+        Objects.requireNonNull(river, "river");
         if (height < seaLevel - 4.0D) {
             return StandardTerrainTypes.OCEAN;
         }

@@ -1,5 +1,7 @@
 package dev.foucaultleon.flterraforged.engine.noise;
 
+import java.util.Objects;
+
 /** Immutable octave/fractal wrapper around another noise source. */
 public final class FractalNoise2D implements Noise2D {
 
@@ -9,7 +11,16 @@ public final class FractalNoise2D implements Noise2D {
     private final double lacunarity;
     private final double normalization;
 
+    /**
+     * Creates an octave noise source.
+     *
+     * @param source base noise source
+     * @param octaves number of octaves, at least one
+     * @param persistence amplitude multiplier per octave in {@code (0, 1]}
+     * @param lacunarity frequency multiplier per octave, greater than one
+     */
     public FractalNoise2D(Noise2D source, int octaves, double persistence, double lacunarity) {
+        this.source = Objects.requireNonNull(source, "source");
         if (octaves < 1) {
             throw new IllegalArgumentException("octaves must be >= 1");
         }
@@ -19,7 +30,6 @@ public final class FractalNoise2D implements Noise2D {
         if (lacunarity <= 1.0D) {
             throw new IllegalArgumentException("lacunarity must be > 1");
         }
-        this.source = source;
         this.octaves = octaves;
         this.persistence = persistence;
         this.lacunarity = lacunarity;
@@ -32,6 +42,7 @@ public final class FractalNoise2D implements Noise2D {
         this.normalization = 1.0D / total;
     }
 
+    /** {@inheritDoc} */
     @Override
     public double sample(double x, double z) {
         double result = 0.0D;

@@ -33,3 +33,25 @@
 - Keeps the explicit local composite-build option for simultaneous API/engine development.
 - Publishes the engine artifact to its own GitHub Packages repository after successful checks on `main`.
 - Disables caching of changing API modules for `-SNAPSHOT` versions.
+
+
+### r4
+- Replaced GitHub Packages API resolution with the FEF-style Maven repository chain.
+- Added local build repository, sibling build repository and `mavenLocal()` resolution.
+- Default API repository is the public FlTerraForged `maven` branch.
+- Removed API package credentials and cross-repository token requirements.
+- Removed source-level composite coupling from `settings.gradle`.
+- Engine publishing now builds `build/maven-repository` and mirrors it to its public `maven` branch.
+- Retained the JUnit 5 test correction from r3.
+
+
+### r5
+- Updated GitHub Actions to Node 24 compatible releases: `actions/checkout@v6`, `actions/setup-java@v6`, and `gradle/actions/setup-gradle@v6`.
+- Pinned `peaceiris/actions-gh-pages@v4.1.0`, whose action runtime uses Node 24.
+- Removes Node 20 deprecation warnings from the engine build and Maven-branch publishing workflow.
+
+## 0.1.0-SNAPSHOT-r6
+
+- Added complete Javadoc coverage for the default engine implementation.
+- Added package-level engine documentation.
+- Configured Javadoc with `-Werror` so Maven publication cannot silently emit Javadoc warnings.

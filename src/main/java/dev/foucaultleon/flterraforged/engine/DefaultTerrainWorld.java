@@ -13,8 +13,9 @@ import dev.foucaultleon.flterraforged.engine.noise.ValueNoise2D;
 import dev.foucaultleon.flterraforged.engine.river.RiverModel;
 import dev.foucaultleon.flterraforged.engine.terrain.TerrainClassifier;
 import dev.foucaultleon.flterraforged.engine.terrain.TerrainModel;
+import java.util.Objects;
 
-/** Seed-bound, immutable world sampler. */
+/** Seed-bound, immutable and thread-safe world sampler. */
 public final class DefaultTerrainWorld implements TerrainWorld {
 
     private final EngineContext context;
@@ -23,8 +24,15 @@ public final class DefaultTerrainWorld implements TerrainWorld {
     private final RiverModel river;
     private final TerrainClassifier classifier;
 
+    /**
+     * Creates a deterministic terrain view for one world.
+     *
+     * @param context immutable world context
+     * @param settings immutable engine settings
+     */
     public DefaultTerrainWorld(EngineContext context, EngineSettings settings) {
-        this.context = context;
+        this.context = Objects.requireNonNull(context, "context");
+        Objects.requireNonNull(settings, "settings");
         long seed = context.seed();
 
         FractalNoise2D continentNoise = fractal(seed ^ 0x27D4EB2F165667C5L, 4, 0.50D, 2.0D);
@@ -56,11 +64,13 @@ public final class DefaultTerrainWorld implements TerrainWorld {
         return new FractalNoise2D(new ValueNoise2D(seed), octaves, persistence, lacunarity);
     }
 
+    /** {@inheritDoc} */
     @Override
     public EngineContext context() {
         return context;
     }
 
+    /** {@inheritDoc} */
     @Override
     public TerrainSample sample(int x, int z) {
         TerrainModel.Point center = terrain.samplePoint(x, z);

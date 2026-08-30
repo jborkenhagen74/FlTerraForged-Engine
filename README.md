@@ -2,7 +2,9 @@
 
 Default external terrain-engine implementation for FlTerraForged.
 
-The engine is deliberately independent of Minecraft, Fabric, NeoForge, TerraBlender and Conquest Reforged. It implements the Java-only `flterraforged-engine-api` SPI published by the FlTerraForged repository.
+The engine is deliberately independent of Minecraft, Fabric, NeoForge,
+TerraBlender and Conquest Reforged. It implements only the Java 17
+`flterraforged-engine-api` SPI.
 
 ## Dependency direction
 
@@ -10,81 +12,98 @@ The engine is deliberately independent of Minecraft, Fabric, NeoForge, TerraBlen
 FlTerraForged
   └─ publishes flterraforged-engine-api
              ↓
-      GitHub Packages
+      public Maven repository
              ↓
 FlTerraForged-Engine
   └─ consumes engine-api
 ```
 
-The Engine CI does **not** check out, build or publish FlTerraForged.
+The Engine CI does not check out or build FlTerraForged.
 
-## GitHub Packages
+## Engine API resolution
 
-The default API repository is:
+Resolution follows the same pattern used by the FEF examples/components:
+
+1. Explicit local build repository via
+   `flterraforged_api_local_repository` or
+   `FLTERRAFORGED_API_LOCAL_REPOSITORY`.
+2. `../FlTerraForged/build/maven-repository` automatically when that sibling
+   repository exists.
+3. `mavenLocal()`.
+4. `mavenCentral()`.
+5. Public remote repository via `flterraforged_api_repository_url` or
+   `FLTERRAFORGED_API_REPOSITORY_URL`.
+
+The build has this public URL as its default remote repository:
 
 ```text
-https://maven.pkg.github.com/jborkenhagen74/FlTerraForged
+https://raw.githubusercontent.com/jborkenhagen74/FlTerraForged/maven/
 ```
 
-and the current API coordinate is:
+Current API dependency:
 
 ```text
 dev.foucaultleon:flterraforged-engine-api:0.1.0-SNAPSHOT
 ```
 
-GitHub Actions reads the package using its `GITHUB_TOKEN` with `packages: read`. The Engine publishes its own artifact after a successful `main` build to:
+No token is required to consume the public Maven repository.
+
+## Local development with both repositories
+
+Directory layout:
 
 ```text
-https://maven.pkg.github.com/jborkenhagen74/FlTerraForged-Engine
+workspace/
+├── FlTerraForged/
+└── FlTerraForged-Engine/
 ```
 
-For repositories where the workflow token cannot read the FlTerraForged package, configure these repository secrets/environment values with a classic PAT that has `read:packages`:
+First publish the API into FlTerraForged's build repository:
 
-```text
-FLTERRAFORGED_PACKAGES_USER
-FLTERRAFORGED_PACKAGES_TOKEN
+```bash
+cd FlTerraForged
+gradle --no-daemon :engine-api:publish
 ```
 
-The standard public-repository setup should not require them.
+Then build the Engine:
 
-## Local development
+```bash
+cd ../FlTerraForged-Engine
+gradle --no-daemon --refresh-dependencies clean check
+```
 
-### Preferred: composite build
+The Engine automatically detects
+`../FlTerraForged/build/maven-repository`.
 
-When editing FlTerraForged API and Engine together:
+For an arbitrary path you can instead use:
 
 ```bash
 gradle --no-daemon check \
-  -Pflterraforged_api_project_dir=../FlTerraForged
+  -Pflterraforged_api_local_repository=/path/to/FlTerraForged/build/maven-repository
 ```
 
-This substitutes the published API dependency with the local `:engine-api` project.
+## Engine Maven publication
 
-### Explicit Maven Local fallback
-
-Maven Local is deliberately disabled by default to prevent stale API snapshots from being selected silently.
-
-If you explicitly published the API locally, enable it with:
-
-```bash
-gradle --no-daemon check \
-  -Pflterraforged_use_maven_local=true
-```
-
-### Direct GitHub Packages build outside Actions
-
-Set Gradle properties or environment variables containing a GitHub username and a classic PAT with `read:packages`:
+The Engine itself uses the same model. `gradle publish` writes to:
 
 ```text
-gpr.user / gpr.key
+build/maven-repository
 ```
 
-or:
+On `develop`, GitHub Actions mirrors that repository to:
 
 ```text
-FLTERRAFORGED_PACKAGES_USER / FLTERRAFORGED_PACKAGES_TOKEN
+https://raw.githubusercontent.com/jborkenhagen74/FlTerraForged-Engine/maven/
+```
+
+Current Engine coordinate:
+
+```text
+dev.foucaultleon:flterraforged-engine:0.1.0-SNAPSHOT
 ```
 
 ## Current implementation
 
-`0.1.0-SNAPSHOT` is a bootstrap engine used to validate the API boundary, deterministic sampling, ServiceLoader discovery and concurrent access. TerraForged/ReTerraForged/FreeTerraForged algorithms are not imported yet.
+`0.1.0-SNAPSHOT` is a bootstrap engine used to validate the API boundary,
+deterministic sampling, ServiceLoader discovery and concurrent access.
+TerraForged/ReTerraForged/FreeTerraForged algorithms are not imported yet.

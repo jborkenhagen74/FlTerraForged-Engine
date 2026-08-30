@@ -7,9 +7,16 @@ group = providers.gradleProperty('flterraforged_engine_group').get()
 version = providers.gradleProperty('flterraforged_engine_version').get()
 
 def engineApiVersion = providers.gradleProperty('flterraforged_engine_api_version').get()
-def useMavenLocal = providers.gradleProperty('flterraforged_use_maven_local')
-        .map { it.toBoolean() }
-        .orElse(false)
+
+def configuredLocalRepository = providers
+        .gradleProperty('flterraforged_api_local_repository')
+        .orElse(providers.environmentVariable('FLTERRAFORGED_API_LOCAL_REPOSITORY'))
+        .getOrNull()
+
+def remoteRepositoryUrl = providers
+        .gradleProperty('flterraforged_api_repository_url')
+        .orElse(providers.environmentVariable('FLTERRAFORGED_API_REPOSITORY_URL'))
+        .orElse('https://raw.githubusercontent.com/jborkenhagen74/FlTerraForged/maven/')
         .get()
 
 base {
@@ -29,31 +36,47 @@ tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
 }
 
+tasks.withType(Javadoc).configureEach {
+    options.encoding = 'UTF-8'
+    options.charSet = 'UTF-8'
+    options.addBooleanOption('Werror', true)
+}
+
 repositories {
-    if (useMavenLocal) {
-        mavenLocal()
+    // 1) Explicit local build repository, useful when FlTerraForged and the
+    // engine are developed together but remain separate repositories.
+    if (configuredLocalRepository != null && !configuredLocalRepository.isBlank()) {
+        maven {
+            name = 'flTerraForgedLocalBuild'
+            url = uri(configuredLocalRepository)
+        }
+    } else {
+        // FEF-style convenience: if the sibling repository has already
+        // published :engine-api locally, consume it automatically.
+        File siblingRepository = file('../FlTerraForged/build/maven-repository')
+        if (siblingRepository.isDirectory()) {
+            maven {
+                name = 'flTerraForgedSiblingBuild'
+                url = siblingRepository.toURI()
+            }
+        }
     }
 
+    // 2) Developer-local Maven cache.
+    mavenLocal()
+
+    // 3) Normal public dependencies.
     mavenCentral()
 
-    maven {
-        name = 'FlTerraForgedGitHubPackages'
-        url = uri(providers.gradleProperty('flterraforged_api_repository_url')
-                .orElse(providers.environmentVariable('FLTERRAFORGED_API_REPOSITORY_URL'))
-                .orElse('https://maven.pkg.github.com/jborkenhagen74/FlTerraForged')
-                .get())
-        credentials {
-            username = providers.gradleProperty('gpr.user')
-                    .orElse(providers.environmentVariable('FLTERRAFORGED_PACKAGES_USER'))
-                    .orElse(providers.environmentVariable('GITHUB_ACTOR'))
-                    .getOrNull()
-            password = providers.gradleProperty('gpr.key')
-                    .orElse(providers.environmentVariable('FLTERRAFORGED_PACKAGES_TOKEN'))
-                    .orElse(providers.environmentVariable('GITHUB_TOKEN'))
-                    .getOrNull()
-        }
-        content {
-            includeGroup 'dev.foucaultleon'
+    // 4) Public FlTerraForged API repository. No credentials are required
+    // while the GitHub repository is public.
+    if (remoteRepositoryUrl != null && !remoteRepositoryUrl.isBlank()) {
+        maven {
+            name = 'flTerraForgedApi'
+            url = uri(remoteRepositoryUrl)
+            content {
+                includeModule 'dev.foucaultleon', 'flterraforged-engine-api'
+            }
         }
     }
 }
@@ -149,18 +172,12 @@ publishing {
         }
     }
 
+    // The engine itself uses the same FEF-style repository model. CI mirrors
+    // this directory to this repository's public `maven` branch.
     repositories {
         maven {
-            name = 'GitHubPackages'
-            url = uri('https://maven.pkg.github.com/jborkenhagen74/FlTerraForged-Engine')
-            credentials {
-                username = providers.gradleProperty('gpr.user')
-                        .orElse(providers.environmentVariable('GITHUB_ACTOR'))
-                        .getOrNull()
-                password = providers.gradleProperty('gpr.key')
-                        .orElse(providers.environmentVariable('GITHUB_TOKEN'))
-                        .getOrNull()
-            }
+            name = 'buildRepository'
+            url = rootProject.layout.buildDirectory.dir('maven-repository')
         }
     }
 }

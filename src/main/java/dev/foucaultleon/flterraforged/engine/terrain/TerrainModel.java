@@ -6,6 +6,7 @@ import dev.foucaultleon.flterraforged.engine.erosion.ErosionModel;
 import dev.foucaultleon.flterraforged.engine.internal.Maths;
 import dev.foucaultleon.flterraforged.engine.noise.Noise2D;
 import dev.foucaultleon.flterraforged.engine.river.RiverModel;
+import java.util.Objects;
 
 /** Bootstrap terrain-shaping pipeline. */
 public final class TerrainModel {
@@ -18,6 +19,17 @@ public final class TerrainModel {
     private final RiverModel river;
     private final EngineSettings settings;
 
+    /**
+     * Creates the bootstrap terrain model.
+     *
+     * @param context immutable world context
+     * @param continent continental noise source
+     * @param ridge ridge/mountain noise source
+     * @param detail fine-detail noise source
+     * @param erosion erosion model
+     * @param river river model
+     * @param settings engine settings
+     */
     public TerrainModel(
             EngineContext context,
             Noise2D continent,
@@ -26,15 +38,22 @@ public final class TerrainModel {
             ErosionModel erosion,
             RiverModel river,
             EngineSettings settings) {
-        this.context = context;
-        this.continent = continent;
-        this.ridge = ridge;
-        this.detail = detail;
-        this.erosion = erosion;
-        this.river = river;
-        this.settings = settings;
+        this.context = Objects.requireNonNull(context, "context");
+        this.continent = Objects.requireNonNull(continent, "continent");
+        this.ridge = Objects.requireNonNull(ridge, "ridge");
+        this.detail = Objects.requireNonNull(detail, "detail");
+        this.erosion = Objects.requireNonNull(erosion, "erosion");
+        this.river = Objects.requireNonNull(river, "river");
+        this.settings = Objects.requireNonNull(settings, "settings");
     }
 
+    /**
+     * Samples all base terrain signals required by the world sampler.
+     *
+     * @param x world X coordinate
+     * @param z world Z coordinate
+     * @return terrain point
+     */
     public Point samplePoint(int x, int z) {
         double continentalness = continent.sample(
                 x * settings.continentScale(),
@@ -46,6 +65,13 @@ public final class TerrainModel {
         return new Point(height, erosionValue, continentalness);
     }
 
+    /**
+     * Samples only the continuous surface height.
+     *
+     * @param x world X coordinate
+     * @param z world Z coordinate
+     * @return continuous surface height
+     */
     public double surfaceHeight(int x, int z) {
         return samplePoint(x, z).surfaceHeight();
     }
@@ -67,6 +93,13 @@ public final class TerrainModel {
         return context.seaLevel() + landBias + mountains + detailRelief;
     }
 
+    /**
+     * Base terrain signals for one X/Z position.
+     *
+     * @param surfaceHeight continuous surface height
+     * @param erosion normalized erosion value
+     * @param continentalness continentalness signal
+     */
     public record Point(double surfaceHeight, double erosion, double continentalness) {
     }
 }

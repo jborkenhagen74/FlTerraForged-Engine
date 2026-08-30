@@ -1,8 +1,20 @@
 package dev.foucaultleon.flterraforged.engine;
 
 import dev.foucaultleon.flterraforged.engine.api.EngineConfig;
+import java.util.Objects;
 
-/** Parsed, validated bootstrap-engine configuration. */
+/**
+ * Parsed, validated bootstrap-engine configuration.
+ *
+ * @param continentScale spatial scale of continental noise
+ * @param terrainScale spatial scale of ridge and terrain noise
+ * @param detailScale spatial scale of small terrain detail
+ * @param climateScale spatial scale of temperature and moisture fields
+ * @param riverScale spatial scale of the procedural river field
+ * @param relief base continental relief in blocks
+ * @param mountainRelief additional mountain relief in blocks
+ * @param riverDepth maximum procedural river incision depth in blocks
+ */
 public record EngineSettings(
         double continentScale,
         double terrainScale,
@@ -13,6 +25,11 @@ public record EngineSettings(
         double mountainRelief,
         double riverDepth) {
 
+    /**
+     * Returns the default bootstrap-engine settings.
+     *
+     * @return default settings
+     */
     public static EngineSettings defaults() {
         return new EngineSettings(
                 0.00055D,
@@ -25,7 +42,15 @@ public record EngineSettings(
                 7.0D);
     }
 
+    /**
+     * Parses engine settings from the generic engine configuration.
+     *
+     * @param config source configuration
+     * @return validated settings
+     * @throws IllegalArgumentException if a configured numeric value is invalid
+     */
     public static EngineSettings from(EngineConfig config) {
+        Objects.requireNonNull(config, "config");
         EngineSettings d = defaults();
         return new EngineSettings(
                 positive(config, "continentScale", d.continentScale),

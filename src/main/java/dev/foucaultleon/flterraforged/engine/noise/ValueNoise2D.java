@@ -7,10 +7,16 @@ public final class ValueNoise2D implements Noise2D {
 
     private final long seed;
 
+    /**
+     * Creates a deterministic value-noise source.
+     *
+     * @param seed noise seed
+     */
     public ValueNoise2D(long seed) {
         this.seed = seed;
     }
 
+    /** {@inheritDoc} */
     @Override
     public double sample(double x, double z) {
         int x0 = fastFloor(x);

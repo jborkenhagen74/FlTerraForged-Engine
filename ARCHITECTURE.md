@@ -83,4 +83,16 @@ These algorithms are scaffolding, not compatibility claims with TerraForged.
 
 ## Published API boundary
 
-Normal builds resolve `flterraforged-engine-api` from the FlTerraForged GitHub Packages repository. The Engine CI never checks out FlTerraForged. Local composite substitution is an explicit developer-only mechanism and Maven Local is opt-in, preventing accidental coupling to stale local artifacts.
+Normal builds resolve `flterraforged-engine-api` as a Maven artifact. The Engine
+CI never checks out or builds FlTerraForged. Resolution prefers a configured
+local build repository, then a sibling FlTerraForged build repository,
+`mavenLocal()`, normal public repositories and finally the configured public
+FlTerraForged API repository.
+
+The default remote is the public `maven` branch:
+
+```text
+https://raw.githubusercontent.com/jborkenhagen74/FlTerraForged/maven/
+```
+
+No GitHub Packages credential is part of the Engine API contract.

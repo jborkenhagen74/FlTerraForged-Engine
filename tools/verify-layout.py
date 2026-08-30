@@ -9,15 +9,30 @@ banned = (
     "com.mojang.serialization.",
 )
 errors = []
+
 for source in java_root.rglob("*.java"):
     text = source.read_text(encoding="utf-8")
     for token in banned:
         if token in text:
             errors.append(f"{source.relative_to(root)}: forbidden {token}")
+
 service = root / "src/main/resources/META-INF/services/dev.foucaultleon.flterraforged.engine.api.EngineProvider"
 if not service.is_file():
     errors.append("missing EngineProvider ServiceLoader descriptor")
+
+build_text = (root / "build.gradle").read_text(encoding="utf-8")
+workflow_text = (root / ".github/workflows/build.yml").read_text(encoding="utf-8")
+if "maven.pkg.github.com" in build_text:
+    errors.append("Engine API must not be resolved from GitHub Packages")
+if "FLTERRAFORGED_PACKAGES_TOKEN" in build_text or "FLTERRAFORGED_PACKAGES_TOKEN" in workflow_text:
+    errors.append("Engine API resolution must not require a package token")
+if "packages: read" in workflow_text or "packages: write" in workflow_text:
+    errors.append("Workflow must not require GitHub Packages permissions")
+if "raw.githubusercontent.com/jborkenhagen74/FlTerraForged/maven/" not in build_text:
+    errors.append("missing default public FlTerraForged API Maven repository")
+
 if errors:
     print("\n".join(errors), file=sys.stderr)
     raise SystemExit(1)
-print("Engine layout verified: Java-only, ServiceLoader provider present")
+
+print("Engine layout verified: Java-only, ServiceLoader provider present, public Maven API model")
