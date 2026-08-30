@@ -1,5 +1,32 @@
 # Upstream provenance
 
+## r8: continent foundation
+
+The continent migration uses the modern ReTerraForged/FreeTerraForged continent
+layout as an algorithmic reference, but intentionally narrows the external
+engine contract.
+
+Reference sources used for this step:
+
+- **ReTerraForged branch `1.20.1`**
+  - `cell/continent/Continent.java` — continent-as-cell-populator contract,
+    edge sampling and stable center semantics. Its direct `Rivermap` ownership
+    is deliberately *not* carried into FlTerraForged-Engine.
+  - `cell/continent/advanced/AbstractContinent.java` — continent scale, jitter,
+    optional cell skipping, stable cell values and center/edge search concepts.
+  - `cell/continent/advanced/AdvancedContinentGenerator.java` — warped jittered
+    cell points, nearest-owner selection, perpendicular-bisector boundary
+    distance, size variance, coast modulation and corrected continent centers.
+- **FreeTerraForged branch `1.21.1_V0.0.6005`**
+  - later continent package layout was checked before fixing the new boundary;
+    it retains `advanced` and `simple` strategies and introduces an `uplift`
+    strategy that is intentionally deferred to a later optional implementation.
+
+FlTerraForged's implementation is rewritten around Java-only `double` samples,
+its own deterministic hashing/noise primitives and immutable `ContinentSample`
+results. Minecraft control points, biome decisions and river-map caches are not
+part of this module.
+
 ## r7: noise and cell foundation
 
 The first migration step uses the TerraForged family as an architectural and
@@ -37,7 +64,6 @@ closely derived from upstream implementations.
 
 ## Planned references for later stages
 
-- continent mathematics;
 - terrain shaping;
 - erosion mathematics;
 - river/hydrology mathematics;

@@ -104,7 +104,7 @@ dev.foucaultleon:flterraforged-engine:0.1.0-SNAPSHOT
 
 ## Current implementation
 
-`0.1.0-SNAPSHOT-r7` contains the first two migrated engine foundations:
+`0.1.0-SNAPSHOT-r8` contains the first three migrated engine foundations:
 
 1. **Noise** — seed-aware modular scalar fields, interpolation, gradient/value
    sources, octave composition, arithmetic modules, curve/distance functions and
@@ -112,8 +112,13 @@ dev.foucaultleon:flterraforged-engine:0.1.0-SNAPSHOT
 2. **Cell** — a mutable semantic terrain cell plus allocation-conscious
    `CellLookup`, ordered `CellPopulator` pipelines and noise-backed cell stages.
    Biome objects and Minecraft registry types are intentionally excluded.
+3. **Continent** — a warped jittered-Voronoi partition that produces stable
+   continent IDs, world-space continent centers and an inward coast/edge signal.
+   `AdvancedContinent` implements `CellPopulator`, so later terrain, river and
+   climate stages can consume the same semantic cell signals without Minecraft
+   coupling.
 
-The existing bootstrap terrain sampler now consumes the new seed-aware modular
-noise foundation through `SeededNoise2D`. The cell pipeline is intentionally not
-yet wired into `TerrainModel`; that happens with the terrain/continent migration
-so that the stages remain independently testable.
+The active `TerrainModel` now obtains continentalness from `AdvancedContinent`
+rather than from the old bootstrap fractal-continent field. River-map ownership
+is intentionally not part of `Continent`; hydrology remains a separate engine
+stage and will be connected during the river migration.

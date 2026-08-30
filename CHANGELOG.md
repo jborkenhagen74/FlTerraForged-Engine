@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.0-SNAPSHOT-r8
+
+- Added the third migrated engine foundation: `continent`.
+- Added `Continent`, `ContinentSample`, `ContinentCenter`, `ContinentSettings` and `AdvancedContinent`.
+- Implemented deterministic warped jittered-Voronoi continent ownership, stable centers, size variance, optional skipping and coast modulation.
+- Made `Continent` a `CellPopulator` while retaining immutable direct sampling for thread-safe hot paths.
+- Replaced the active bootstrap fractal continentalness field in `TerrainModel` with the new continent sampler.
+- Kept river-map/cache ownership out of the continent contract so hydrology remains independently replaceable.
+- Added configurable continent jitter, skipping, size variance, warp strength and coast roughness settings.
+- Added deterministic, bounds, coastline/interior, cell-population and concurrent-sampling tests.
+- Verified Java 17 compilation with `-Xlint:all`, strict Javadoc with `-Werror`, engine isolation and standalone continent/world smoke tests.
+
 ## 0.1.0-SNAPSHOT-r7
 
 - Migrated the first two external-engine foundations: `noise` and `cell`.

@@ -2,6 +2,8 @@ package dev.foucaultleon.flterraforged.engine.terrain;
 
 import dev.foucaultleon.flterraforged.engine.EngineSettings;
 import dev.foucaultleon.flterraforged.engine.api.EngineContext;
+import dev.foucaultleon.flterraforged.engine.continent.Continent;
+import dev.foucaultleon.flterraforged.engine.continent.ContinentSample;
 import dev.foucaultleon.flterraforged.engine.erosion.ErosionModel;
 import dev.foucaultleon.flterraforged.engine.internal.Maths;
 import dev.foucaultleon.flterraforged.engine.noise.Noise2D;
@@ -12,7 +14,7 @@ import java.util.Objects;
 public final class TerrainModel {
 
     private final EngineContext context;
-    private final Noise2D continent;
+    private final Continent continent;
     private final Noise2D ridge;
     private final Noise2D detail;
     private final ErosionModel erosion;
@@ -23,7 +25,7 @@ public final class TerrainModel {
      * Creates the bootstrap terrain model.
      *
      * @param context immutable world context
-     * @param continent continental noise source
+     * @param continent continent partition and coastline source
      * @param ridge ridge/mountain noise source
      * @param detail fine-detail noise source
      * @param erosion erosion model
@@ -32,7 +34,7 @@ public final class TerrainModel {
      */
     public TerrainModel(
             EngineContext context,
-            Noise2D continent,
+            Continent continent,
             Noise2D ridge,
             Noise2D detail,
             ErosionModel erosion,
@@ -55,9 +57,8 @@ public final class TerrainModel {
      * @return terrain point
      */
     public Point samplePoint(int x, int z) {
-        double continentalness = continent.sample(
-                x * settings.continentScale(),
-                z * settings.continentScale());
+        ContinentSample continentSample = continent.sample(x, z);
+        double continentalness = continentSample.continentalness();
         double erosionValue = erosion.sample(x, z);
         double height = baseHeight(x, z, continentalness, erosionValue);
         height -= river.incision(x, z, continentalness);

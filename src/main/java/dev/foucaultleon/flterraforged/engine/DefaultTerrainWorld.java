@@ -7,6 +7,9 @@ import dev.foucaultleon.flterraforged.engine.api.river.RiverSample;
 import dev.foucaultleon.flterraforged.engine.api.terrain.TerrainSample;
 import dev.foucaultleon.flterraforged.engine.api.terrain.TerrainType;
 import dev.foucaultleon.flterraforged.engine.climate.ClimateModel;
+import dev.foucaultleon.flterraforged.engine.continent.AdvancedContinent;
+import dev.foucaultleon.flterraforged.engine.continent.Continent;
+import dev.foucaultleon.flterraforged.engine.continent.ContinentSettings;
 import dev.foucaultleon.flterraforged.engine.erosion.ErosionModel;
 import dev.foucaultleon.flterraforged.engine.noise.FractalNoise;
 import dev.foucaultleon.flterraforged.engine.noise.GradientNoise;
@@ -39,7 +42,7 @@ public final class DefaultTerrainWorld implements TerrainWorld {
         Objects.requireNonNull(settings, "settings");
         long seed = context.seed();
 
-        Noise2D continentNoise = fractal(seed, 0x27D4EB2F165667C5L, 4, 0.50D, 2.0D);
+        Continent continent = new AdvancedContinent(seed ^ 0x27D4EB2F165667C5L, ContinentSettings.from(settings));
         Noise2D ridgeNoise = fractal(seed, 0x9E3779B97F4A7C15L, 5, 0.52D, 2.05D);
         Noise2D detailNoise = fractal(seed, 0xC2B2AE3D27D4EB4FL, 3, 0.45D, 2.15D);
         Noise2D erosionNoise = fractal(seed, 0x165667B19E3779F9L, 3, 0.50D, 2.0D);
@@ -51,7 +54,7 @@ public final class DefaultTerrainWorld implements TerrainWorld {
         this.river = new RiverModel(riverNoise, settings.riverScale(), settings.riverDepth());
         this.terrain = new TerrainModel(
                 context,
-                continentNoise,
+                continent,
                 ridgeNoise,
                 detailNoise,
                 erosion,

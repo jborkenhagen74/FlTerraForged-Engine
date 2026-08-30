@@ -4,9 +4,14 @@ import dev.foucaultleon.flterraforged.engine.api.EngineConfig;
 import java.util.Objects;
 
 /**
- * Parsed, validated bootstrap-engine configuration.
+ * Parsed and validated engine configuration.
  *
- * @param continentScale spatial scale of continental noise
+ * @param continentScale base spatial frequency used to derive tectonic continent-cell size
+ * @param continentJitter fractional displacement of tectonic continent points
+ * @param continentSkipping threshold for suppressing non-origin continent cells
+ * @param continentSizeVariance maximum continent-cell size variance
+ * @param continentWarpStrength continent warp strength relative to tectonic cell size
+ * @param continentCoastRoughness normalized coastline modulation strength
  * @param terrainScale spatial scale of ridge and terrain noise
  * @param detailScale spatial scale of small terrain detail
  * @param climateScale spatial scale of temperature and moisture fields
@@ -17,6 +22,11 @@ import java.util.Objects;
  */
 public record EngineSettings(
         double continentScale,
+        double continentJitter,
+        double continentSkipping,
+        double continentSizeVariance,
+        double continentWarpStrength,
+        double continentCoastRoughness,
         double terrainScale,
         double detailScale,
         double climateScale,
@@ -26,13 +36,18 @@ public record EngineSettings(
         double riverDepth) {
 
     /**
-     * Returns the default bootstrap-engine settings.
+     * Returns the default engine settings.
      *
      * @return default settings
      */
     public static EngineSettings defaults() {
         return new EngineSettings(
                 0.00055D,
+                0.85D,
+                0.0D,
+                0.25D,
+                0.33D,
+                0.30D,
                 0.00170D,
                 0.00800D,
                 0.00080D,
@@ -54,6 +69,11 @@ public record EngineSettings(
         EngineSettings d = defaults();
         return new EngineSettings(
                 positive(config, "continentScale", d.continentScale),
+                unit(config, "continentJitter", d.continentJitter),
+                unit(config, "continentSkipping", d.continentSkipping),
+                unit(config, "continentSizeVariance", d.continentSizeVariance),
+                unit(config, "continentWarpStrength", d.continentWarpStrength),
+                unit(config, "continentCoastRoughness", d.continentCoastRoughness),
                 positive(config, "terrainScale", d.terrainScale),
                 positive(config, "detailScale", d.detailScale),
                 positive(config, "climateScale", d.climateScale),
@@ -64,14 +84,30 @@ public record EngineSettings(
     }
 
     private static double positive(EngineConfig config, String key, double fallback) {
+        double parsed = number(config, key, fallback);
+        if (parsed <= 0.0D) {
+            throw new IllegalArgumentException("Engine config '" + key + "' must be > 0");
+        }
+        return parsed;
+    }
+
+    private static double unit(EngineConfig config, String key, double fallback) {
+        double parsed = number(config, key, fallback);
+        if (parsed < 0.0D || parsed > 1.0D) {
+            throw new IllegalArgumentException("Engine config '" + key + "' must be in [0, 1]");
+        }
+        return parsed;
+    }
+
+    private static double number(EngineConfig config, String key, double fallback) {
         String value = config.get(key).orElse(null);
         if (value == null) {
             return fallback;
         }
         try {
             double parsed = Double.parseDouble(value);
-            if (!Double.isFinite(parsed) || parsed <= 0.0D) {
-                throw new IllegalArgumentException("Engine config '" + key + "' must be > 0");
+            if (!Double.isFinite(parsed)) {
+                throw new IllegalArgumentException("Engine config '" + key + "' must be finite");
             }
             return parsed;
         } catch (NumberFormatException exception) {

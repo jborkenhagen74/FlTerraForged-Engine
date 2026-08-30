@@ -26,12 +26,13 @@ DefaultTerrainEngine
         v
 DefaultTerrainWorld (one seed/world)
         |
+        +-- AdvancedContinent
         +-- TerrainModel
         +-- ClimateModel
         +-- RiverModel
         +-- ErosionModel
         +-- modular Noise graph
-        +-- Cell foundation (next terrain stages)
+        +-- Cell foundation
         |
         v
 TerrainSample
@@ -67,9 +68,21 @@ cache ownership. `CellLookup` fills caller-owned targets and `CellField` is an
 immutable ordered population pipeline. This design keeps the foundation safe for
 parallel chunk-generation use.
 
-The cell layer is not yet wired into the bootstrap `TerrainModel`. Continents
-and terrain shaping will be migrated next and will become the first real users
-of the cell pipeline.
+### Migrated foundation: continent
+
+The first real cell-generation stage is now present. `AdvancedContinent` uses a
+warped, jittered Voronoi partition to calculate a stable continent owner,
+world-space center and normalized inward distance from ocean-producing cell
+boundaries. It implements `CellPopulator`, but also exposes immutable
+`ContinentSample` values so hot-path terrain sampling does not require shared
+mutable cell ownership.
+
+The active `TerrainModel` consumes this continent signal directly. The former
+bootstrap fractal-continent field has been removed from active terrain shaping.
+Unlike ReTerraForged's historical `Continent` contract, the FlTerraForged engine
+continent layer does not own a river-map cache; hydrology remains a separate
+stage. Biome interpretation and Minecraft control points likewise remain outside
+the external engine boundary.
 
 ## Planned upstream migration boundary
 
@@ -77,7 +90,6 @@ of the cell pipeline.
 
 - noise primitives and composition;
 - cell/Voronoi systems;
-- continent mathematics;
 - terrain shaping;
 - erosion mathematics;
 - river/hydrology mathematics;
