@@ -88,17 +88,24 @@ After river application:
 - `Cell.riverMask == 0` represents the channel center;
 - `Cell.riverMask == 1` represents terrain outside the channel width.
 
-The stable `RiverSample` API remains unchanged and reports the nearest centerline distance, full
-channel width and local incision depth.
+`RiverSample` continues to report nearest centerline distance, full channel width and local incision
+depth. r15 adds two optional signals while retaining the legacy three-argument constructor:
+
+- `waterSurfaceHeight`: continuous world-space Y of the active channel water surface;
+- `flow`: accumulated drainage weight represented by the nearest segment.
+
+The water surface is calculated from the same directed segment interpolation used by the channel
+centerline with a constant bank inset. It is therefore stable across the river cross-section and
+monotonically follows the segment's upstream/downstream terrain elevations instead of being rebuilt
+from each local terrain column.
 
 ## Deliberately deferred
 
 The base hydrology layer does not yet add:
 
-- lake/basin filling;
-- explicit local water-surface elevation in the public Engine API;
-- waterfalls;
-- FreeTerraForged-style 3D river water placement;
+- lake/basin water-surface solving across closed depressions;
+- explicit waterfall/rapid shaping beyond the directed segment grade;
+- FreeTerraForged-style 3D river water placement inside a Minecraft density graph;
 - biome routing for riverbanks;
 - Minecraft fluids, blocks or surface rules.
 

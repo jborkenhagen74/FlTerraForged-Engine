@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.0-SNAPSHOT-r15
+
+- Report provider version `0.1.0-SNAPSHOT-r15` so host debug output can distinguish this hydrology build from r14.
+- Extend river hydrology with a continuous `waterSurfaceHeight` derived directly from each directed `RiverSegment`.
+- Keep a constant bank inset across segment endpoints so connected drainage segments share the same node-relative water elevation instead of using noisy per-column terrain guesses.
+- Carry `riverWaterSurfaceHeight` and `riverFlow` through the shared `Cell` and project both through the additive `RiverSample` API fields.
+- Advertise `RIVER_WATER_LEVEL` from the default Engine.
+- Add tests for water-surface availability, Cell/API projection, downhill segment continuity and concurrent deterministic sampling.
+- Lakes/basin filling and explicit waterfall shaping remain intentionally deferred.
+
 ## 0.1.0-SNAPSHOT-r14
 
 - Combined continent, terrain, erosion, river/rivermap and climate under a single immutable `WorldgenPipeline` composition root.

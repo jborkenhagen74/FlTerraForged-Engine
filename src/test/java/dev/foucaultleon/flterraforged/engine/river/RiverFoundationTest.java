@@ -41,8 +41,35 @@ final class RiverFoundationTest {
 
         assertTrue(sample.distance() < sample.width() * 0.5D);
         assertTrue(sample.depth() > 0.0D);
+        assertTrue(sample.hasWaterSurfaceHeight());
+        assertTrue(sample.waterSurfaceHeight() > cell.height);
+        assertTrue(sample.hasFlow());
+        assertEquals(sample.waterSurfaceHeight(), cell.riverWaterSurfaceHeight);
+        assertEquals(sample.flow(), cell.riverFlow);
         assertTrue(cell.height < cell.heightErosion);
         assertTrue(cell.riverMask >= 0.0D && cell.riverMask < 1.0D);
+    }
+
+
+    @Test
+    void segmentWaterSurfaceDescendsContinuouslyWithDrainageDirection() {
+        RiverSegment segment = model(314159L).map(0, 0).segments().stream()
+                .filter(candidate -> candidate.startHeight() > candidate.endHeight())
+                .findFirst()
+                .orElseThrow();
+
+        RiverHit start = segment.hit(segment.startX(), segment.startZ());
+        RiverHit middle = segment.hit(
+                (segment.startX() + segment.endX()) * 0.5D,
+                (segment.startZ() + segment.endZ()) * 0.5D);
+        RiverHit end = segment.hit(segment.endX(), segment.endZ());
+
+        assertTrue(start.waterSurfaceHeight() > middle.waterSurfaceHeight());
+        assertTrue(middle.waterSurfaceHeight() > end.waterSurfaceHeight());
+        assertEquals(
+                (start.waterSurfaceHeight() + end.waterSurfaceHeight()) * 0.5D,
+                middle.waterSurfaceHeight(),
+                1.0E-9D);
     }
 
     @Test

@@ -34,6 +34,10 @@ final class WorldgenPipelineTest {
         assertTrue(Double.isFinite(cell.riverDistance));
         assertTrue(cell.riverWidth > 0.0D);
         assertTrue(cell.riverDepth >= 0.0D);
+        if (cell.riverDepth > 0.0D) {
+            assertTrue(Double.isFinite(cell.riverWaterSurfaceHeight));
+            assertTrue(Double.isFinite(cell.riverFlow));
+        }
         assertTrue(cell.temperature >= 0.0D && cell.temperature <= 1.0D);
         assertTrue(cell.moisture >= 0.0D && cell.moisture <= 1.0D);
         assertTrue(Double.isFinite(cell.gradient) && cell.gradient >= 0.0D);
@@ -55,6 +59,8 @@ final class WorldgenPipelineTest {
         assertEquals(cell.riverDistance, sample.river().distance());
         assertEquals(cell.riverWidth, sample.river().width());
         assertEquals(cell.riverDepth, sample.river().depth());
+        assertEquals(cell.riverWaterSurfaceHeight, sample.river().waterSurfaceHeight());
+        assertEquals(cell.riverFlow, sample.river().flow());
     }
 
     @Test

@@ -69,6 +69,8 @@ public final class RiverModel implements CellLookup {
             target.riverDistance = settings.regionSize() * 2.0D;
             target.riverWidth = settings.minimumWidth();
             target.riverDepth = 0.0D;
+            target.riverWaterSurfaceHeight = Double.NaN;
+            target.riverFlow = Double.NaN;
             target.height = target.heightErosion;
             return;
         }
@@ -77,6 +79,10 @@ public final class RiverModel implements CellLookup {
         target.riverDistance = hit.distance();
         target.riverWidth = hit.width();
         target.riverDepth = hit.depth();
+        target.riverWaterSurfaceHeight = hit.depth() > 0.0D
+                ? hit.waterSurfaceHeight()
+                : Double.NaN;
+        target.riverFlow = hit.flow();
         target.height = Maths.clamp(
                 target.heightErosion - hit.depth(),
                 world.minY() + 1.0D,
@@ -93,9 +99,19 @@ public final class RiverModel implements CellLookup {
     public RiverSample sample(int x, int z) {
         RiverHit hit = nearest(x, z);
         if (!hit.present()) {
-            return new RiverSample(settings.regionSize() * 2.0D, settings.minimumWidth(), 0.0D);
+            return new RiverSample(
+                    settings.regionSize() * 2.0D,
+                    settings.minimumWidth(),
+                    0.0D,
+                    Double.NaN,
+                    Double.NaN);
         }
-        return new RiverSample(hit.distance(), hit.width(), hit.depth());
+        return new RiverSample(
+                hit.distance(),
+                hit.width(),
+                hit.depth(),
+                hit.depth() > 0.0D ? hit.waterSurfaceHeight() : Double.NaN,
+                hit.flow());
     }
 
     /**

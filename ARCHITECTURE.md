@@ -236,3 +236,11 @@ Cross-stage defaults are grouped into `EnginePreset` profiles (`BALANCED`, `GENT
 Numeric EngineConfig values still override individual profile fields. Semantic ocean/coast/river
 classification is coordinated through `TerrainClassificationSettings.from(EngineSettings)` rather
 than a separate set of unrelated constants.
+
+
+## River water-level signal
+
+Directed `RiverSegment` sampling now produces a continuous channel water-surface elevation in world
+Y. `RiverModel` stores it in `Cell.riverWaterSurfaceHeight` together with `Cell.riverFlow`, and
+`WorldgenPipeline` projects both into `RiverSample`. This remains semantic Java-only data; Minecraft
+fluid placement belongs to the host adapter.

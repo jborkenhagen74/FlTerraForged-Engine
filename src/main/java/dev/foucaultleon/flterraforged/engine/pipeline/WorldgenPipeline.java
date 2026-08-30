@@ -170,7 +170,12 @@ public final class WorldgenPipeline implements CellLookup {
         Cell center = sampleCell(x, z);
         double continentalness = center.continentEdge * 2.0D - 1.0D;
         ClimateSample climateSample = new ClimateSample(center.temperature, center.moisture);
-        RiverSample riverSample = new RiverSample(center.riverDistance, center.riverWidth, center.riverDepth);
+        RiverSample riverSample = new RiverSample(
+                center.riverDistance,
+                center.riverWidth,
+                center.riverDepth,
+                center.riverWaterSurfaceHeight,
+                center.riverFlow);
         TerrainType type = classifier.classify(
                 center.terrain,
                 center.height,

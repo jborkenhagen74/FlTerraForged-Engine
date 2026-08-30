@@ -31,6 +31,19 @@ if "packages: read" in workflow_text or "packages: write" in workflow_text:
 if "raw.githubusercontent.com/jborkenhagen74/FlTerraForged/maven/" not in build_text:
     errors.append("missing default public FlTerraForged API Maven repository")
 
+river_segment = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/river/RiverSegment.java").read_text(encoding="utf-8")
+river_model = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/river/RiverModel.java").read_text(encoding="utf-8")
+cell = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/cell/Cell.java").read_text(encoding="utf-8")
+engine = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/DefaultTerrainEngine.java").read_text(encoding="utf-8")
+for token, label in (("waterSurfaceHeight", "directed river water surface"), ("WATER_SURFACE_INSET", "stable bank inset")):
+    if token not in river_segment:
+        errors.append(f"RiverSegment missing {label}")
+for token in ("riverWaterSurfaceHeight", "riverFlow"):
+    if token not in river_model or token not in cell:
+        errors.append(f"Engine hydrology pipeline missing {token}")
+if "EngineCapability.RIVER_WATER_LEVEL" not in engine:
+    errors.append("Default engine does not advertise RIVER_WATER_LEVEL")
+
 if errors:
     print("\n".join(errors), file=sys.stderr)
     raise SystemExit(1)

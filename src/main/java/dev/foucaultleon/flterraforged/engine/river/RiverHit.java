@@ -7,6 +7,7 @@ package dev.foucaultleon.flterraforged.engine.river;
  * @param width full channel width in blocks
  * @param depth local incision depth in blocks
  * @param surfaceHeight eroded pre-incision height interpolated along the segment
+ * @param waterSurfaceHeight continuous world-space Y coordinate of the channel water surface
  * @param flow accumulated drainage weight represented by the segment
  */
 public record RiverHit(
@@ -14,10 +15,11 @@ public record RiverHit(
         double width,
         double depth,
         double surfaceHeight,
+        double waterSurfaceHeight,
         double flow) {
 
     /** Shared marker used when no segment is present in the searched maps. */
-    public static final RiverHit NONE = new RiverHit(Double.POSITIVE_INFINITY, 0.0D, 0.0D, Double.NaN, 0.0D);
+    public static final RiverHit NONE = new RiverHit(Double.POSITIVE_INFINITY, 0.0D, 0.0D, Double.NaN, Double.NaN, 0.0D);
 
     /**
      * Returns whether this result references an actual river segment.

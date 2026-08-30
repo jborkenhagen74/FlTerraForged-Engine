@@ -168,3 +168,11 @@ than being unrelated hard-coded constants.
 
 Lakes, waterfalls, public river-water elevation, biome routing and Minecraft water/surface
 placement remain later integration work.
+
+
+## Hydrology water surface (r15)
+
+The default Engine now exports a continuous river-water elevation and accumulated flow with each
+active river sample. The Engine still owns no Minecraft blocks or fluids; loader adapters decide how
+to materialize the semantic water surface. Lakes/basin filling and explicit waterfall shaping remain
+separate future hydrology stages.

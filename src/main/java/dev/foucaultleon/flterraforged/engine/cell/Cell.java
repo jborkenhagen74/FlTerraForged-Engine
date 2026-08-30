@@ -46,6 +46,10 @@ public final class Cell {
     public double riverWidth;
     /** Incision depth in blocks contributed by the nearest river channel. */
     public double riverDepth;
+    /** Continuous world-space Y coordinate of the nearest river water surface. */
+    public double riverWaterSurfaceHeight;
+    /** Accumulated drainage flow represented by the nearest river segment. */
+    public double riverFlow;
     /** Continent-cell X coordinate. */
     public int continentX;
     /** Continent-cell Z coordinate. */
@@ -93,6 +97,8 @@ public final class Cell {
         riverDistance = other.riverDistance;
         riverWidth = other.riverWidth;
         riverDepth = other.riverDepth;
+        riverWaterSurfaceHeight = other.riverWaterSurfaceHeight;
+        riverFlow = other.riverFlow;
         continentX = other.continentX;
         continentZ = other.continentZ;
         erosionMask = other.erosionMask;
@@ -127,6 +133,8 @@ public final class Cell {
         riverDistance = Double.POSITIVE_INFINITY;
         riverWidth = 0.0D;
         riverDepth = 0.0D;
+        riverWaterSurfaceHeight = Double.NaN;
+        riverFlow = Double.NaN;
         continentX = 0;
         continentZ = 0;
         erosionMask = false;

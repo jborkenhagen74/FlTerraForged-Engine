@@ -26,6 +26,9 @@ public record RiverSegment(
         double width,
         double depth) {
 
+    /** Vertical inset of the water surface below the pre-incision channel banks. */
+    private static final double WATER_SURFACE_INSET = 0.35D;
+
     /**
      * Returns the shortest horizontal distance from a world point to this segment.
      *
@@ -50,7 +53,14 @@ public record RiverSegment(
         double channel = 1.0D - Maths.smooth(normalized);
         double bedDepth = depth * channel;
         double surfaceHeight = Maths.lerp(startHeight, endHeight, projection.alpha());
-        return new RiverHit(projection.distance(), width, bedDepth, surfaceHeight, flow);
+        double waterSurfaceHeight = surfaceHeight - WATER_SURFACE_INSET;
+        return new RiverHit(
+                projection.distance(),
+                width,
+                bedDepth,
+                surfaceHeight,
+                waterSurfaceHeight,
+                flow);
     }
 
     private Projection projection(double x, double z) {

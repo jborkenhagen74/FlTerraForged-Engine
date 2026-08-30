@@ -18,6 +18,7 @@ public final class DefaultTerrainEngine implements TerrainEngine {
             EngineCapability.CONTINENTALNESS,
             EngineCapability.CLIMATE,
             EngineCapability.RIVERS,
+            EngineCapability.RIVER_WATER_LEVEL,
             EngineCapability.TERRAIN_TYPE);
 
     private final EngineSettings settings;
