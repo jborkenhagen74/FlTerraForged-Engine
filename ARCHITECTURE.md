@@ -32,9 +32,12 @@ DefaultTerrainWorld (one seed/world)
         |    +-- TerrainProvider
         |    +-- TerrainPopulator
         |    +-- Blender / CompositeTerrain
+        |    +-- ErosionPipeline
+        |         +-- HydraulicErosionFilter
+        |         +-- ThermalErosionFilter
+        |         +-- bounded immutable ErosionTile cache
         +-- ClimateModel
         +-- RiverModel
-        +-- ErosionModel
         +-- modular Noise graph
         +-- Cell foundation
         |
@@ -42,9 +45,11 @@ DefaultTerrainWorld (one seed/world)
 TerrainSample
 ```
 
-`DefaultTerrainWorld` and all model/noise objects are immutable after
-construction. `sample(x, z)` therefore has no shared mutable state and is safe
-for concurrent chunk-generation calls.
+`DefaultTerrainWorld` and all model/noise definitions are immutable after
+construction. Erosion uses a small synchronized LRU containing only immutable
+completed tiles; expensive tile generation happens outside the lock. Sampling
+therefore remains deterministic and safe for concurrent chunk-generation calls
+without recursive cache wait graphs.
 
 ## Migration state
 
@@ -101,7 +106,7 @@ Terrain is now a first-class cell stage instead of a single bootstrap height
 formula. A deterministic `TerrainRegionSampler` partitions land independently
 inside continents. `TerrainProvider` maps each owner and nearest neighbor region
 to engine-neutral landforms, `Blender` smooths transitions at region boundaries,
-and `TerrainPopulator` writes the selected terrain, region, height, erosion and
+and `TerrainPopulator` writes the selected terrain, region, base height and
 weirdness signals into the general engine `Cell`.
 
 `ConfiguredTerrain` and `CompositeTerrain` deliberately contain no Mojang
@@ -110,6 +115,29 @@ translating the engine's continuous height and semantic `TerrainType` into the
 Minecraft-version-specific density/chunk pipeline. FreeTerraForged's later
 `IslandBlender` concept is deferred until island generation is migrated as an
 optional terrain strategy.
+
+### Migrated foundation: erosion
+
+Physical erosion is now a distinct post-terrain stage rather than an input noise
+field. `ErosionPipeline` first requests the un-eroded base height field from
+`TerrainPopulator`, builds padded deterministic regions and applies two filters:
+
+- `HydraulicErosionFilter` launches globally aligned deterministic virtual water
+  droplets. Droplets follow the bilinear gradient, gain/lose sediment capacity,
+  erode downhill surfaces and deposit carried material when capacity drops.
+- `ThermalErosionFilter` redistributes material from local slopes above the talus
+  threshold, providing a cheap rock/soil relaxation pass after hydraulic carving.
+
+Each region is generated with a border wider than the maximum droplet travel plus
+brush radius. Globally aligned droplet launch coordinates and a world-stable seed
+make overlapping region calculations consistent at core boundaries. Completed
+`ErosionTile` objects are immutable and stored in a bounded synchronized LRU;
+region generation never occurs while the cache lock is held.
+
+The common `Cell` now uses `heightErosion` for post-erosion/pre-river height,
+`erosion` for normalized erosion intensity, `sediment` for deposited material,
+`gradient` for local eroded slope and `erosionMask` to mark modified positions.
+Minecraft terrain blocks and decoration remain outside this stage.
 
 ## Planned upstream migration boundary
 

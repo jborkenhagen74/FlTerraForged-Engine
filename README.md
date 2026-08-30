@@ -104,7 +104,7 @@ dev.foucaultleon:flterraforged-engine:0.1.0-SNAPSHOT
 
 ## Current implementation
 
-`0.1.0-SNAPSHOT-r10` contains the first four migrated engine foundations:
+`0.1.0-SNAPSHOT-r11` contains the first five migrated engine foundations:
 
 1. **Noise** — seed-aware modular scalar fields, interpolation, gradient/value
    sources, octave composition, arithmetic modules, curve/distance functions and
@@ -120,8 +120,11 @@ dev.foucaultleon:flterraforged-engine:0.1.0-SNAPSHOT
    configured/composite landforms, boundary blending and `TerrainPopulator`.
    Large continents can contain multiple deterministic plains, hills, valleys,
    plateaus and mountain regions without exposing Minecraft worldgen classes.
+5. **Erosion** — deterministic padded erosion regions, hydraulic virtual droplets,
+   sediment carry/deposition, thermal talus relaxation and a bounded immutable-tile
+   cache. Erosion modifies the continuous engine height field before river
+   incision and writes erosion/sediment/gradient signals into the common `Cell`.
 
-The active `TerrainModel` now consumes the completed continent and terrain
-pipelines. River-map ownership remains outside `Continent`; the current
-`RiverModel` and `ErosionModel` are retained only as bootstrap stages until their
-own migrations.
+The active `TerrainModel` now consumes continent → terrain → erosion → river in
+that order. River-map ownership remains outside `Continent`; `RiverModel` is the
+remaining bootstrap stage awaiting its dedicated migration.

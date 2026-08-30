@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.1.0-SNAPSHOT-r11
+
+- Replaced the bootstrap scalar `ErosionModel` with a dedicated physical erosion pipeline.
+- Added deterministic padded erosion regions with globally aligned hydraulic droplet launches.
+- Added sediment capacity, erosion brush, carry/deposition, gravity and evaporation behavior.
+- Added thermal talus relaxation as a second erosion pass.
+- Added bounded shared caching of immutable erosion tiles; expensive generation occurs outside the cache lock.
+- Moved erosion after base terrain shaping and before river incision.
+- `Cell.heightErosion`, `erosion`, `sediment`, `gradient` and `erosionMask` now carry real erosion-stage data.
+- Removed erosion noise from `TerrainContext`/`TerrainPopulator`; landform generation is no longer suppressed by a fake erosion field.
+- Added configurable `erosionStrength`, `erosionDeposition`, `thermalErosionStrength` and `erosionMaxDelta`.
+- Added erosion determinism, deposition, boundary and concurrent-sampling tests plus standalone smoke tests.
+- Added `MIGRATION-EROSION.md`.
+
 ## 0.1.0-SNAPSHOT-r10
 
 - Added the fourth migrated engine foundation: `terrain`.

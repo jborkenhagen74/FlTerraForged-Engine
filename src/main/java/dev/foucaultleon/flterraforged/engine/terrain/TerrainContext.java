@@ -13,15 +13,13 @@ import java.util.Objects;
  * @param z world Z coordinate
  * @param continent continent sample for the position
  * @param region terrain-region sample for the position
- * @param erosion normalized erosion signal
  */
 public record TerrainContext(
         EngineContext world,
         double x,
         double z,
         ContinentSample continent,
-        TerrainRegionSample region,
-        double erosion) {
+        TerrainRegionSample region) {
 
     /**
      * Validates a terrain context.
@@ -31,13 +29,12 @@ public record TerrainContext(
      * @param z world Z coordinate
      * @param continent continent sample for the position
      * @param region terrain-region sample for the position
-     * @param erosion normalized erosion signal
      */
     public TerrainContext {
         Objects.requireNonNull(world, "world");
         Objects.requireNonNull(continent, "continent");
         Objects.requireNonNull(region, "region");
-        if (!Double.isFinite(x) || !Double.isFinite(z) || !Double.isFinite(erosion)) {
+        if (!Double.isFinite(x) || !Double.isFinite(z)) {
             throw new IllegalArgumentException("terrain context numeric values must be finite");
         }
     }

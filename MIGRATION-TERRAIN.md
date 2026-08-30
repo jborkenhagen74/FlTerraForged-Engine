@@ -47,11 +47,10 @@ ContinentSample
        │
        ├───────────────┐
        ▼               ▼
-TerrainRegionSampler   ErosionModel
-       │               │
-       └──────┬────────┘
-              ▼
-       TerrainProvider
+TerrainRegionSampler
+       │
+       ▼
+TerrainProvider
               │
       primary + neighbor
               │
@@ -89,7 +88,6 @@ close to boundaries, avoiding hard height discontinuities between landforms.
 
 - `continentId`, `continentEdge`, `continentX`, `continentZ`;
 - `terrainRegionId`, `terrainRegionEdge`;
-- `erosion`;
 - `weirdness`;
 - `terrain`;
 - `height` and `heightErosion`.
@@ -107,9 +105,8 @@ The following upstream concepts are not part of r10 yet:
 - density-function adapters;
 - surface rules and block placement;
 - FreeTerraForged island-specific blending (`IslandBlender`);
-- full migrated erosion filters;
 - full migrated river/hydrology maps;
 - climate-based terrain providers.
 
-`ErosionModel` and `RiverModel` remain bootstrap post/input stages until their
-own dedicated migrations.
+`RiverModel` remains the final bootstrap post-stage until its dedicated migration.
+Physical erosion was migrated in r11 and now runs after `TerrainPopulator`.

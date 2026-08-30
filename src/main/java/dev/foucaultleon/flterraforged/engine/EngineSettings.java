@@ -22,6 +22,10 @@ import java.util.Objects;
  * @param relief base continental relief in blocks
  * @param mountainRelief additional mountain relief in blocks
  * @param riverDepth maximum procedural river incision depth in blocks
+ * @param erosionStrength hydraulic erosion strength multiplier
+ * @param erosionDeposition hydraulic deposition strength multiplier
+ * @param thermalErosionStrength thermal slope-relaxation strength
+ * @param erosionMaxDelta maximum absolute erosion/deposition height change in blocks
  */
 public record EngineSettings(
         double continentScale,
@@ -39,7 +43,11 @@ public record EngineSettings(
         double riverScale,
         double relief,
         double mountainRelief,
-        double riverDepth) {
+        double riverDepth,
+        double erosionStrength,
+        double erosionDeposition,
+        double thermalErosionStrength,
+        double erosionMaxDelta) {
 
     /**
      * Returns the default engine settings.
@@ -63,7 +71,11 @@ public record EngineSettings(
                 0.00110D,
                 36.0D,
                 52.0D,
-                7.0D);
+                7.0D,
+                0.72D,
+                0.55D,
+                0.16D,
+                5.0D);
     }
 
     /**
@@ -92,13 +104,25 @@ public record EngineSettings(
                 positive(config, "riverScale", d.riverScale),
                 positive(config, "relief", d.relief),
                 positive(config, "mountainRelief", d.mountainRelief),
-                positive(config, "riverDepth", d.riverDepth));
+                positive(config, "riverDepth", d.riverDepth),
+                nonNegative(config, "erosionStrength", d.erosionStrength),
+                nonNegative(config, "erosionDeposition", d.erosionDeposition),
+                unit(config, "thermalErosionStrength", d.thermalErosionStrength),
+                positive(config, "erosionMaxDelta", d.erosionMaxDelta));
     }
 
     private static double positive(EngineConfig config, String key, double fallback) {
         double parsed = number(config, key, fallback);
         if (parsed <= 0.0D) {
             throw new IllegalArgumentException("Engine config '" + key + "' must be > 0");
+        }
+        return parsed;
+    }
+
+    private static double nonNegative(EngineConfig config, String key, double fallback) {
+        double parsed = number(config, key, fallback);
+        if (parsed < 0.0D) {
+            throw new IllegalArgumentException("Engine config '" + key + "' must be >= 0");
         }
         return parsed;
     }

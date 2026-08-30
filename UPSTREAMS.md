@@ -1,5 +1,25 @@
 # Upstream provenance
 
+## r11: erosion foundation
+
+The erosion migration uses TerraForged's documented simulated-erosion behavior
+and the ReTerraForged cell/filter separation as architectural references.
+
+- **TerraForged project documentation** describes hydraulic erosion as virtual
+  water droplets moving downhill while eroding, carrying and depositing material.
+- **ReTerraForged branch `1.20.1`** exposes a dedicated `worldgen/cell/filter/`
+  layer in addition to heightmap/continent/terrain/rivermap stages.
+- **FreeTerraForged branch `1.21.1_V0.0.6005`** was checked as the later target
+  branch; its root `worldgen/cell/` layout no longer exposes the same `filter/`
+  directory, so the old package structure is not treated as a compatibility
+  contract.
+
+FlTerraForged-Engine implements its hydraulic and thermal erosion code as a
+Java-only rewrite over the continuous base terrain field. No Minecraft density
+filters, world/chunk objects, biome features, Mojang codecs or loader hooks are
+imported. The region/cache strategy is new to this engine and is designed around
+its deterministic concurrent-sampling contract.
+
 ## r10: terrain foundation
 
 The terrain migration uses the package architecture visible in both target

@@ -71,10 +71,9 @@ public final class ConfiguredTerrain implements Terrain {
         Objects.requireNonNull(context, "context");
         double shapeValue = shape.sample(context.x(), context.z());
         double normalized = shapedSignal(shapeValue);
-        double erosionMask = 1.0D - 0.70D * Maths.clamp(context.erosion(), 0.0D, 1.0D);
         double coastMask = Maths.smooth(Maths.map01(context.continentalness() + 0.15D));
         double landBase = context.continentalness() * relief * 0.35D;
-        double shaped = normalized * relief * erosionMask * coastMask;
+        double shaped = normalized * relief * coastMask;
         double fine = detail.sample(context.x(), context.z()) * detailRelief;
         return context.world().seaLevel() + baseOffset + landBase + shaped + fine;
     }

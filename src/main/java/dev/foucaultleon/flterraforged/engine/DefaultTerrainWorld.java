@@ -11,7 +11,8 @@ import dev.foucaultleon.flterraforged.engine.climate.ClimateModel;
 import dev.foucaultleon.flterraforged.engine.continent.AdvancedContinent;
 import dev.foucaultleon.flterraforged.engine.continent.Continent;
 import dev.foucaultleon.flterraforged.engine.continent.ContinentSettings;
-import dev.foucaultleon.flterraforged.engine.erosion.ErosionModel;
+import dev.foucaultleon.flterraforged.engine.erosion.ErosionPipeline;
+import dev.foucaultleon.flterraforged.engine.erosion.ErosionSettings;
 import dev.foucaultleon.flterraforged.engine.noise.FractalNoise;
 import dev.foucaultleon.flterraforged.engine.noise.GradientNoise;
 import dev.foucaultleon.flterraforged.engine.noise.Interpolation;
@@ -71,18 +72,10 @@ public final class DefaultTerrainWorld implements TerrainWorld {
                 3,
                 0.45D,
                 2.15D);
-        Noise2D erosionNoise = fractal(
-                seed,
-                0x165667B19E3779F9L,
-                settings.terrainScale() * 0.70D,
-                3,
-                0.50D,
-                2.0D);
         Noise2D riverNoise = fractal(seed, 0x85EBCA77C2B2AE63L, 1.0D, 4, 0.48D, 2.0D);
         Noise2D temperatureNoise = fractal(seed, 0xD6E8FEB86659FD93L, 1.0D, 3, 0.50D, 2.0D);
         Noise2D moistureNoise = fractal(seed, 0xA5A3564E27F3A21DL, 1.0D, 3, 0.50D, 2.0D);
 
-        ErosionModel erosion = new ErosionModel(erosionNoise, 1.0D);
         this.river = new RiverModel(riverNoise, settings.riverScale(), settings.riverDepth());
         TerrainRegionSampler regions = new TerrainRegionSampler(
                 seed ^ 0xDB4F0B9175AE2165L,
@@ -99,9 +92,13 @@ public final class DefaultTerrainWorld implements TerrainWorld {
                 continent,
                 regions,
                 provider,
-                erosion,
                 settings.terrainBlendWidth());
-        this.terrain = new TerrainModel(context, populator, river);
+        ErosionPipeline erosion = new ErosionPipeline(
+                seed ^ 0x165667B19E3779F9L,
+                context,
+                (x, z, target) -> populator.populate(target, x, z),
+                ErosionSettings.from(settings));
+        this.terrain = new TerrainModel(context, erosion, this.river);
         this.climate = new ClimateModel(
                 temperatureNoise,
                 moistureNoise,
