@@ -6,6 +6,7 @@ import dev.foucaultleon.flterraforged.engine.api.climate.ClimateSample;
 import dev.foucaultleon.flterraforged.engine.api.river.RiverSample;
 import dev.foucaultleon.flterraforged.engine.api.terrain.TerrainSample;
 import dev.foucaultleon.flterraforged.engine.api.terrain.TerrainType;
+import dev.foucaultleon.flterraforged.engine.cell.Cell;
 import dev.foucaultleon.flterraforged.engine.climate.ClimateModel;
 import dev.foucaultleon.flterraforged.engine.continent.AdvancedContinent;
 import dev.foucaultleon.flterraforged.engine.continent.Continent;
@@ -20,6 +21,10 @@ import dev.foucaultleon.flterraforged.engine.noise.SeededNoise2D;
 import dev.foucaultleon.flterraforged.engine.river.RiverModel;
 import dev.foucaultleon.flterraforged.engine.terrain.TerrainClassifier;
 import dev.foucaultleon.flterraforged.engine.terrain.TerrainModel;
+import dev.foucaultleon.flterraforged.engine.terrain.populator.TerrainPopulator;
+import dev.foucaultleon.flterraforged.engine.terrain.provider.DefaultTerrainProvider;
+import dev.foucaultleon.flterraforged.engine.terrain.provider.TerrainProvider;
+import dev.foucaultleon.flterraforged.engine.terrain.region.TerrainRegionSampler;
 import java.util.Objects;
 
 /** Seed-bound, immutable and thread-safe world sampler. */
@@ -42,24 +47,61 @@ public final class DefaultTerrainWorld implements TerrainWorld {
         Objects.requireNonNull(settings, "settings");
         long seed = context.seed();
 
-        Continent continent = new AdvancedContinent(seed ^ 0x27D4EB2F165667C5L, ContinentSettings.from(settings));
-        Noise2D ridgeNoise = fractal(seed, 0x9E3779B97F4A7C15L, 5, 0.52D, 2.05D);
-        Noise2D detailNoise = fractal(seed, 0xC2B2AE3D27D4EB4FL, 3, 0.45D, 2.15D);
-        Noise2D erosionNoise = fractal(seed, 0x165667B19E3779F9L, 3, 0.50D, 2.0D);
-        Noise2D riverNoise = fractal(seed, 0x85EBCA77C2B2AE63L, 4, 0.48D, 2.0D);
-        Noise2D temperatureNoise = fractal(seed, 0xD6E8FEB86659FD93L, 3, 0.50D, 2.0D);
-        Noise2D moistureNoise = fractal(seed, 0xA5A3564E27F3A21DL, 3, 0.50D, 2.0D);
+        Continent continent = new AdvancedContinent(
+                seed ^ 0x27D4EB2F165667C5L,
+                ContinentSettings.from(settings));
+        Noise2D rollingNoise = fractal(
+                seed,
+                0x9E3779B97F4A7C15L,
+                settings.terrainScale(),
+                4,
+                0.52D,
+                2.02D);
+        Noise2D ridgeNoise = fractal(
+                seed,
+                0x94D049BB133111EBL,
+                settings.terrainScale() * 0.78D,
+                5,
+                0.52D,
+                2.05D);
+        Noise2D detailNoise = fractal(
+                seed,
+                0xC2B2AE3D27D4EB4FL,
+                settings.detailScale(),
+                3,
+                0.45D,
+                2.15D);
+        Noise2D erosionNoise = fractal(
+                seed,
+                0x165667B19E3779F9L,
+                settings.terrainScale() * 0.70D,
+                3,
+                0.50D,
+                2.0D);
+        Noise2D riverNoise = fractal(seed, 0x85EBCA77C2B2AE63L, 1.0D, 4, 0.48D, 2.0D);
+        Noise2D temperatureNoise = fractal(seed, 0xD6E8FEB86659FD93L, 1.0D, 3, 0.50D, 2.0D);
+        Noise2D moistureNoise = fractal(seed, 0xA5A3564E27F3A21DL, 1.0D, 3, 0.50D, 2.0D);
 
-        ErosionModel erosion = new ErosionModel(erosionNoise, settings.terrainScale() * 0.70D);
+        ErosionModel erosion = new ErosionModel(erosionNoise, 1.0D);
         this.river = new RiverModel(riverNoise, settings.riverScale(), settings.riverDepth());
-        this.terrain = new TerrainModel(
-                context,
-                continent,
+        TerrainRegionSampler regions = new TerrainRegionSampler(
+                seed ^ 0xDB4F0B9175AE2165L,
+                settings.terrainRegionScale(),
+                settings.terrainRegionJitter());
+        TerrainProvider provider = new DefaultTerrainProvider(
+                rollingNoise,
                 ridgeNoise,
                 detailNoise,
+                settings.relief(),
+                settings.mountainRelief());
+        TerrainPopulator populator = new TerrainPopulator(
+                context,
+                continent,
+                regions,
+                provider,
                 erosion,
-                river,
-                settings);
+                settings.terrainBlendWidth());
+        this.terrain = new TerrainModel(context, populator, river);
         this.climate = new ClimateModel(
                 temperatureNoise,
                 moistureNoise,
@@ -70,10 +112,11 @@ public final class DefaultTerrainWorld implements TerrainWorld {
     private static Noise2D fractal(
             long worldSeed,
             long seedOffset,
+            double frequency,
             int octaves,
             double gain,
             double lacunarity) {
-        Noise source = new GradientNoise(seedOffset, 1.0D, Interpolation.QUINTIC);
+        Noise source = new GradientNoise(seedOffset, frequency, Interpolation.QUINTIC);
         return new SeededNoise2D(new FractalNoise(source, octaves, gain, lacunarity), worldSeed);
     }
 
@@ -86,7 +129,7 @@ public final class DefaultTerrainWorld implements TerrainWorld {
     /** {@inheritDoc} */
     @Override
     public TerrainSample sample(int x, int z) {
-        TerrainModel.Point center = terrain.samplePoint(x, z);
+        Cell center = terrain.sampleCell(x, z);
         double west = terrain.surfaceHeight(x - 1, z);
         double east = terrain.surfaceHeight(x + 1, z);
         double north = terrain.surfaceHeight(x, z - 1);
@@ -94,21 +137,24 @@ public final class DefaultTerrainWorld implements TerrainWorld {
         double dx = (east - west) * 0.5D;
         double dz = (south - north) * 0.5D;
         double slope = Math.hypot(dx, dz);
+        center.gradient = slope;
 
-        ClimateSample climateSample = climate.sample(x, z, center.surfaceHeight(), context.seaLevel());
-        RiverSample riverSample = river.sample(x, z, center.continentalness());
+        double continentalness = center.continentEdge * 2.0D - 1.0D;
+        ClimateSample climateSample = climate.sample(x, z, center.height, context.seaLevel());
+        RiverSample riverSample = river.sample(x, z, continentalness);
         TerrainType type = classifier.classify(
-                center.surfaceHeight(),
+                center.terrain,
+                center.height,
                 context.seaLevel(),
                 slope,
-                center.continentalness(),
+                continentalness,
                 riverSample);
 
         return new TerrainSample(
-                center.surfaceHeight(),
+                center.height,
                 slope,
-                center.erosion(),
-                center.continentalness(),
+                center.erosion,
+                continentalness,
                 type,
                 climateSample,
                 riverSample);

@@ -104,7 +104,7 @@ dev.foucaultleon:flterraforged-engine:0.1.0-SNAPSHOT
 
 ## Current implementation
 
-`0.1.0-SNAPSHOT-r9` contains the first three migrated engine foundations:
+`0.1.0-SNAPSHOT-r10` contains the first four migrated engine foundations:
 
 1. **Noise** — seed-aware modular scalar fields, interpolation, gradient/value
    sources, octave composition, arithmetic modules, curve/distance functions and
@@ -115,10 +115,13 @@ dev.foucaultleon:flterraforged-engine:0.1.0-SNAPSHOT
 3. **Continent** — a warped jittered-Voronoi partition with a dedicated
    caller-owned `ContinentCell` workspace for owner, neighbor, boundary and
    center geometry. It produces stable continent IDs, corrected world-space
-   centers and an inward coast/edge signal. `AdvancedContinent` also implements
-   `CellPopulator`, so the finished signals flow into the general engine `Cell`.
+   centers and an inward coast/edge signal.
+4. **Terrain** — an independent terrain-region partition, terrain provider,
+   configured/composite landforms, boundary blending and `TerrainPopulator`.
+   Large continents can contain multiple deterministic plains, hills, valleys,
+   plateaus and mountain regions without exposing Minecraft worldgen classes.
 
-The active `TerrainModel` now obtains continentalness from `AdvancedContinent`
-rather than from the old bootstrap fractal-continent field. River-map ownership
-is intentionally not part of `Continent`; hydrology remains a separate engine
-stage and will be connected during the river migration.
+The active `TerrainModel` now consumes the completed continent and terrain
+pipelines. River-map ownership remains outside `Continent`; the current
+`RiverModel` and `ErosionModel` are retained only as bootstrap stages until their
+own migrations.

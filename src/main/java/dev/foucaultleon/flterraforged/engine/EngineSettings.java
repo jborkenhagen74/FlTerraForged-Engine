@@ -12,8 +12,11 @@ import java.util.Objects;
  * @param continentSizeVariance maximum continent-cell size variance
  * @param continentWarpStrength continent warp strength relative to tectonic cell size
  * @param continentCoastRoughness normalized coastline modulation strength
- * @param terrainScale spatial scale of ridge and terrain noise
+ * @param terrainScale spatial scale of broad terrain-shape noise
  * @param detailScale spatial scale of small terrain detail
+ * @param terrainRegionScale spatial frequency of terrain-region partitioning
+ * @param terrainRegionJitter fractional displacement of terrain-region points
+ * @param terrainBlendWidth normalized blend width around terrain-region boundaries
  * @param climateScale spatial scale of temperature and moisture fields
  * @param riverScale spatial scale of the procedural river field
  * @param relief base continental relief in blocks
@@ -29,6 +32,9 @@ public record EngineSettings(
         double continentCoastRoughness,
         double terrainScale,
         double detailScale,
+        double terrainRegionScale,
+        double terrainRegionJitter,
+        double terrainBlendWidth,
         double climateScale,
         double riverScale,
         double relief,
@@ -50,6 +56,9 @@ public record EngineSettings(
                 0.30D,
                 0.00170D,
                 0.00800D,
+                0.00042D,
+                0.82D,
+                0.28D,
                 0.00080D,
                 0.00110D,
                 36.0D,
@@ -76,6 +85,9 @@ public record EngineSettings(
                 unit(config, "continentCoastRoughness", d.continentCoastRoughness),
                 positive(config, "terrainScale", d.terrainScale),
                 positive(config, "detailScale", d.detailScale),
+                positive(config, "terrainRegionScale", d.terrainRegionScale),
+                unit(config, "terrainRegionJitter", d.terrainRegionJitter),
+                positiveUnit(config, "terrainBlendWidth", d.terrainBlendWidth),
                 positive(config, "climateScale", d.climateScale),
                 positive(config, "riverScale", d.riverScale),
                 positive(config, "relief", d.relief),
@@ -95,6 +107,14 @@ public record EngineSettings(
         double parsed = number(config, key, fallback);
         if (parsed < 0.0D || parsed > 1.0D) {
             throw new IllegalArgumentException("Engine config '" + key + "' must be in [0, 1]");
+        }
+        return parsed;
+    }
+
+    private static double positiveUnit(EngineConfig config, String key, double fallback) {
+        double parsed = number(config, key, fallback);
+        if (parsed <= 0.0D || parsed > 1.0D) {
+            throw new IllegalArgumentException("Engine config '" + key + "' must be in (0, 1]");
         }
         return parsed;
     }

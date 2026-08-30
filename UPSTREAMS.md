@@ -1,5 +1,25 @@
 # Upstream provenance
 
+## r10: terrain foundation
+
+The terrain migration uses the package architecture visible in both target
+reference branches as its primary structural reference.
+
+- **ReTerraForged branch `1.20.1`**
+  - `cell/terrain/` contains `Blender`, `CompositeTerrain`, `ConfiguredTerrain`,
+    `ITerrain`, `Terrain`, `TerrainCategory` and `TerrainType`;
+  - the package is separated further into `populator`, `provider` and `region`.
+- **FreeTerraForged branch `1.21.1_V0.0.6005`**
+  - retains the same core terrain/provider/populator/region split;
+  - additionally contains `IslandBlender`, which is deliberately deferred until
+    island generation is treated as an optional terrain strategy.
+
+FlTerraForged-Engine rewrites these concepts around its Java-only `Cell`,
+`TerrainType`, noise and continent contracts. No Mojang codec, Minecraft density
+function, biome holder, block, surface rule or loader type is imported. The
+current default provider and region partition are new engine-neutral
+implementations rather than source-compatible copies.
+
 ## r8: continent foundation
 
 The continent migration uses the modern ReTerraForged/FreeTerraForged continent
@@ -64,7 +84,6 @@ closely derived from upstream implementations.
 
 ## Planned references for later stages
 
-- terrain shaping;
 - erosion mathematics;
 - river/hydrology mathematics;
 - climate mathematics;

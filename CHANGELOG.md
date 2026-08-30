@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.0-SNAPSHOT-r10
+
+- Added the fourth migrated engine foundation: `terrain`.
+- Added engine-neutral `Terrain`, `TerrainCategory`, `TerrainContext`, `ConfiguredTerrain` and `CompositeTerrain` abstractions.
+- Added deterministic jittered-Voronoi terrain regions independent from continent ownership.
+- Added `TerrainProvider`/`DefaultTerrainProvider` for plains, hills, valleys, plateaus and mountains.
+- Added `Blender` for smooth owner/neighbor landform transitions at terrain-region boundaries.
+- Added `TerrainPopulator` to write continent, terrain-region, erosion, weirdness, semantic terrain and height signals into the general engine `Cell`.
+- Refactored `TerrainModel` to orchestrate the real cell terrain pipeline rather than the previous bootstrap height formula.
+- Updated final terrain classification to preserve engine-selected landforms while applying ocean, coast and river overrides.
+- Added terrain-region, provider, blending, world-diversity and concurrent-sampling tests.
+- Added `MIGRATION-TERRAIN.md` and kept Minecraft codecs, density functions, biome logic and FreeTerraForged island-specific blending outside this migration.
+
 ## 0.1.0-SNAPSHOT-r9
 
 - Completed the advanced continent foundation with a dedicated caller-owned `ContinentCell` workspace.

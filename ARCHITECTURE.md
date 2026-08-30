@@ -28,6 +28,10 @@ DefaultTerrainWorld (one seed/world)
         |
         +-- AdvancedContinent
         +-- TerrainModel
+        |    +-- TerrainRegionSampler
+        |    +-- TerrainProvider
+        |    +-- TerrainPopulator
+        |    +-- Blender / CompositeTerrain
         +-- ClimateModel
         +-- RiverModel
         +-- ErosionModel
@@ -91,13 +95,28 @@ continent layer does not own a river-map cache; hydrology remains a separate
 stage. Biome interpretation and Minecraft control points likewise remain outside
 the external engine boundary.
 
+### Migrated foundation: terrain
+
+Terrain is now a first-class cell stage instead of a single bootstrap height
+formula. A deterministic `TerrainRegionSampler` partitions land independently
+inside continents. `TerrainProvider` maps each owner and nearest neighbor region
+to engine-neutral landforms, `Blender` smooths transitions at region boundaries,
+and `TerrainPopulator` writes the selected terrain, region, height, erosion and
+weirdness signals into the general engine `Cell`.
+
+`ConfiguredTerrain` and `CompositeTerrain` deliberately contain no Mojang
+codecs or Minecraft density functions. FlTerraForged remains responsible for
+translating the engine's continuous height and semantic `TerrainType` into the
+Minecraft-version-specific density/chunk pipeline. FreeTerraForged's later
+`IslandBlender` concept is deferred until island generation is migrated as an
+optional terrain strategy.
+
 ## Planned upstream migration boundary
 
 ### Engine candidates
 
 - noise primitives and composition;
 - cell/Voronoi systems;
-- terrain shaping;
 - erosion mathematics;
 - river/hydrology mathematics;
 - climate mathematics;
