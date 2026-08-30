@@ -6,6 +6,12 @@ plugins {
 group = providers.gradleProperty('flterraforged_engine_group').get()
 version = providers.gradleProperty('flterraforged_engine_version').get()
 
+def engineApiVersion = providers.gradleProperty('flterraforged_engine_api_version').get()
+def useMavenLocal = providers.gradleProperty('flterraforged_use_maven_local')
+        .map { it.toBoolean() }
+        .orElse(false)
+        .get()
+
 base {
     archivesName = 'flterraforged-engine'
 }
@@ -24,19 +30,44 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 repositories {
-    mavenLocal()
+    if (useMavenLocal) {
+        mavenLocal()
+    }
+
     mavenCentral()
 
-    def remoteUrl = providers.gradleProperty('flterraforged_api_repository_url')
-            .orElse(providers.environmentVariable('FLTERRAFORGED_API_REPOSITORY_URL'))
-            .getOrNull()
-    if (remoteUrl != null && !remoteUrl.isBlank()) {
-        maven { url = uri(remoteUrl) }
+    maven {
+        name = 'FlTerraForgedGitHubPackages'
+        url = uri(providers.gradleProperty('flterraforged_api_repository_url')
+                .orElse(providers.environmentVariable('FLTERRAFORGED_API_REPOSITORY_URL'))
+                .orElse('https://maven.pkg.github.com/jborkenhagen74/FlTerraForged')
+                .get())
+        credentials {
+            username = providers.gradleProperty('gpr.user')
+                    .orElse(providers.environmentVariable('FLTERRAFORGED_PACKAGES_USER'))
+                    .orElse(providers.environmentVariable('GITHUB_ACTOR'))
+                    .getOrNull()
+            password = providers.gradleProperty('gpr.key')
+                    .orElse(providers.environmentVariable('FLTERRAFORGED_PACKAGES_TOKEN'))
+                    .orElse(providers.environmentVariable('GITHUB_TOKEN'))
+                    .getOrNull()
+        }
+        content {
+            includeGroup 'dev.foucaultleon'
+        }
     }
 }
 
 dependencies {
-    api "dev.foucaultleon:flterraforged-engine-api:${providers.gradleProperty('flterraforged_engine_api_version').get()}"
+    api("dev.foucaultleon:flterraforged-engine-api:${engineApiVersion}") {
+        changing = engineApiVersion.endsWith('-SNAPSHOT')
+    }
+}
+
+configurations.configureEach {
+    if (engineApiVersion.endsWith('-SNAPSHOT')) {
+        resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
+    }
 }
 
 tasks.register('verifyEngineIsolation') {
@@ -70,11 +101,11 @@ tasks.register('verifyServiceProvider') {
     doLast {
         def descriptor = file('src/main/resources/META-INF/services/dev.foucaultleon.flterraforged.engine.api.EngineProvider')
         if (!descriptor.isFile()) {
-            throw new GradleException("Missing EngineProvider service descriptor")
+            throw new GradleException('Missing EngineProvider service descriptor')
         }
         def expected = 'dev.foucaultleon.flterraforged.engine.DefaultEngineProvider'
         if (descriptor.getText('UTF-8').trim() != expected) {
-            throw new GradleException("Unexpected EngineProvider descriptor content")
+            throw new GradleException('Unexpected EngineProvider descriptor content')
         }
     }
 }
@@ -99,6 +130,40 @@ publishing {
         mavenJava(MavenPublication) {
             from components.java
             artifactId = 'flterraforged-engine'
+
+            pom {
+                name = 'FlTerraForged Engine'
+                description = 'Default external terrain engine implementation for FlTerraForged.'
+                url = 'https://github.com/jborkenhagen74/FlTerraForged-Engine'
+
+                licenses {
+                    license {
+                        name = 'MIT License'
+                        url = 'https://opensource.org/license/mit'
+                    }
+                }
+
+                scm {
+                    url = 'https://github.com/jborkenhagen74/FlTerraForged-Engine'
+                    connection = 'scm:git:https://github.com/jborkenhagen74/FlTerraForged-Engine.git'
+                    developerConnection = 'scm:git:ssh://git@github.com/jborkenhagen74/FlTerraForged-Engine.git'
+                }
+            }
+        }
+    }
+
+    repositories {
+        maven {
+            name = 'GitHubPackages'
+            url = uri('https://maven.pkg.github.com/jborkenhagen74/FlTerraForged-Engine')
+            credentials {
+                username = providers.gradleProperty('gpr.user')
+                        .orElse(providers.environmentVariable('GITHUB_ACTOR'))
+                        .getOrNull()
+                password = providers.gradleProperty('gpr.key')
+                        .orElse(providers.environmentVariable('GITHUB_TOKEN'))
+                        .getOrNull()
+            }
         }
     }
 }

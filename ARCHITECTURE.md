@@ -80,3 +80,7 @@ These algorithms are scaffolding, not compatibility claims with TerraForged.
 - Fabric/NeoForge hooks;
 - TerraBlender integration;
 - Conquest/Arona-inspired layers and decoration.
+
+## Published API boundary
+
+Normal builds resolve `flterraforged-engine-api` from the FlTerraForged GitHub Packages repository. The Engine CI never checks out FlTerraForged. Local composite substitution is an explicit developer-only mechanism and Maven Local is opt-in, preventing accidental coupling to stale local artifacts.

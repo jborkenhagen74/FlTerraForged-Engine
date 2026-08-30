@@ -7,16 +7,20 @@ pluginManagement {
 
 rootProject.name = 'FlTerraForged-Engine'
 
-// Development convenience: when the FlTerraForged repository is available as
-// a sibling (or via -Pflterraforged_api_project_dir=...), use its engine-api
-// project directly instead of requiring a published snapshot.
+// Optional local developer convenience only. CI and normal builds resolve the
+// published flterraforged-engine-api artifact from GitHub Packages. Use a
+// composite build only while developing API and engine changes together:
+// -Pflterraforged_api_project_dir=/path/to/FlTerraForged
 def apiProjectDir = providers.gradleProperty('flterraforged_api_project_dir')
         .orElse(providers.environmentVariable('FLTERRAFORGED_API_PROJECT_DIR'))
-        .orElse('../FlTerraForged')
-        .get()
+        .getOrNull()
 
-def apiDir = file(apiProjectDir)
-if (apiDir.isDirectory() && new File(apiDir, 'settings.gradle').isFile()) {
+if (apiProjectDir != null && !apiProjectDir.isBlank()) {
+    def apiDir = file(apiProjectDir)
+    if (!apiDir.isDirectory() || !new File(apiDir, 'settings.gradle').isFile()) {
+        throw new GradleException("Configured FlTerraForged API project directory is invalid: ${apiDir}")
+    }
+
     includeBuild(apiDir) {
         dependencySubstitution {
             substitute module('dev.foucaultleon:flterraforged-engine-api') using project(':engine-api')

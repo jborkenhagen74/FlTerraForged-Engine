@@ -2,24 +2,20 @@ name: Build
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main ]
   pull_request:
   workflow_dispatch:
 
 jobs:
   check:
+    name: Check
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
     steps:
-      - name: Checkout engine
+      - name: Checkout
         uses: actions/checkout@v4
-        with:
-          path: FlTerraForged-Engine
-
-      - name: Checkout FlTerraForged API
-        uses: actions/checkout@v4
-        with:
-          repository: jborkenhagen74/FlTerraForged
-          path: FlTerraForged
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -33,11 +29,41 @@ jobs:
           gradle-version: '9.7.1'
 
       - name: Verify layout
-        working-directory: FlTerraForged-Engine
         run: python3 tools/verify-layout.py
 
-      - name: Build and test
-        working-directory: FlTerraForged-Engine
+      - name: Build and test against published Engine API
+        run: gradle --no-daemon --refresh-dependencies clean check
         env:
-          FLTERRAFORGED_API_PROJECT_DIR: ../FlTerraForged
-        run: gradle --no-daemon check
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FLTERRAFORGED_PACKAGES_USER: ${{ secrets.FLTERRAFORGED_PACKAGES_USER }}
+          FLTERRAFORGED_PACKAGES_TOKEN: ${{ secrets.FLTERRAFORGED_PACKAGES_TOKEN }}
+
+  publish-engine:
+    name: Publish Engine
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.7.1'
+
+      - name: Publish Engine to GitHub Packages
+        run: gradle --no-daemon --refresh-dependencies publish
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FLTERRAFORGED_PACKAGES_USER: ${{ secrets.FLTERRAFORGED_PACKAGES_USER }}
+          FLTERRAFORGED_PACKAGES_TOKEN: ${{ secrets.FLTERRAFORGED_PACKAGES_TOKEN }}
