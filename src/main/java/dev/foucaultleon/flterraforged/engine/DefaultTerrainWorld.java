@@ -1,0 +1,93 @@
+package dev.foucaultleon.flterraforged.engine;
+
+import dev.foucaultleon.flterraforged.engine.api.EngineContext;
+import dev.foucaultleon.flterraforged.engine.api.TerrainWorld;
+import dev.foucaultleon.flterraforged.engine.api.climate.ClimateSample;
+import dev.foucaultleon.flterraforged.engine.api.river.RiverSample;
+import dev.foucaultleon.flterraforged.engine.api.terrain.TerrainSample;
+import dev.foucaultleon.flterraforged.engine.api.terrain.TerrainType;
+import dev.foucaultleon.flterraforged.engine.climate.ClimateModel;
+import dev.foucaultleon.flterraforged.engine.erosion.ErosionModel;
+import dev.foucaultleon.flterraforged.engine.noise.FractalNoise2D;
+import dev.foucaultleon.flterraforged.engine.noise.ValueNoise2D;
+import dev.foucaultleon.flterraforged.engine.river.RiverModel;
+import dev.foucaultleon.flterraforged.engine.terrain.TerrainClassifier;
+import dev.foucaultleon.flterraforged.engine.terrain.TerrainModel;
+
+/** Seed-bound, immutable world sampler. */
+public final class DefaultTerrainWorld implements TerrainWorld {
+
+    private final EngineContext context;
+    private final TerrainModel terrain;
+    private final ClimateModel climate;
+    private final RiverModel river;
+    private final TerrainClassifier classifier;
+
+    public DefaultTerrainWorld(EngineContext context, EngineSettings settings) {
+        this.context = context;
+        long seed = context.seed();
+
+        FractalNoise2D continentNoise = fractal(seed ^ 0x27D4EB2F165667C5L, 4, 0.50D, 2.0D);
+        FractalNoise2D ridgeNoise = fractal(seed ^ 0x9E3779B97F4A7C15L, 5, 0.52D, 2.05D);
+        FractalNoise2D detailNoise = fractal(seed ^ 0xC2B2AE3D27D4EB4FL, 3, 0.45D, 2.15D);
+        FractalNoise2D erosionNoise = fractal(seed ^ 0x165667B19E3779F9L, 3, 0.50D, 2.0D);
+        FractalNoise2D riverNoise = fractal(seed ^ 0x85EBCA77C2B2AE63L, 4, 0.48D, 2.0D);
+        FractalNoise2D temperatureNoise = fractal(seed ^ 0xD6E8FEB86659FD93L, 3, 0.50D, 2.0D);
+        FractalNoise2D moistureNoise = fractal(seed ^ 0xA5A3564E27F3A21DL, 3, 0.50D, 2.0D);
+
+        ErosionModel erosion = new ErosionModel(erosionNoise, settings.terrainScale() * 0.70D);
+        this.river = new RiverModel(riverNoise, settings.riverScale(), settings.riverDepth());
+        this.terrain = new TerrainModel(
+                context,
+                continentNoise,
+                ridgeNoise,
+                detailNoise,
+                erosion,
+                river,
+                settings);
+        this.climate = new ClimateModel(
+                temperatureNoise,
+                moistureNoise,
+                settings.climateScale());
+        this.classifier = new TerrainClassifier();
+    }
+
+    private static FractalNoise2D fractal(long seed, int octaves, double persistence, double lacunarity) {
+        return new FractalNoise2D(new ValueNoise2D(seed), octaves, persistence, lacunarity);
+    }
+
+    @Override
+    public EngineContext context() {
+        return context;
+    }
+
+    @Override
+    public TerrainSample sample(int x, int z) {
+        TerrainModel.Point center = terrain.samplePoint(x, z);
+        double west = terrain.surfaceHeight(x - 1, z);
+        double east = terrain.surfaceHeight(x + 1, z);
+        double north = terrain.surfaceHeight(x, z - 1);
+        double south = terrain.surfaceHeight(x, z + 1);
+        double dx = (east - west) * 0.5D;
+        double dz = (south - north) * 0.5D;
+        double slope = Math.hypot(dx, dz);
+
+        ClimateSample climateSample = climate.sample(x, z, center.surfaceHeight(), context.seaLevel());
+        RiverSample riverSample = river.sample(x, z, center.continentalness());
+        TerrainType type = classifier.classify(
+                center.surfaceHeight(),
+                context.seaLevel(),
+                slope,
+                center.continentalness(),
+                riverSample);
+
+        return new TerrainSample(
+                center.surfaceHeight(),
+                slope,
+                center.erosion(),
+                center.continentalness(),
+                type,
+                climateSample,
+                riverSample);
+    }
+}

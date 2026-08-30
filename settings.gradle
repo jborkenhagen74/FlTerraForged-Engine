@@ -1,0 +1,25 @@
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        mavenCentral()
+    }
+}
+
+rootProject.name = 'FlTerraForged-Engine'
+
+// Development convenience: when the FlTerraForged repository is available as
+// a sibling (or via -Pflterraforged_api_project_dir=...), use its engine-api
+// project directly instead of requiring a published snapshot.
+def apiProjectDir = providers.gradleProperty('flterraforged_api_project_dir')
+        .orElse(providers.environmentVariable('FLTERRAFORGED_API_PROJECT_DIR'))
+        .orElse('../FlTerraForged')
+        .get()
+
+def apiDir = file(apiProjectDir)
+if (apiDir.isDirectory() && new File(apiDir, 'settings.gradle').isFile()) {
+    includeBuild(apiDir) {
+        dependencySubstitution {
+            substitute module('dev.foucaultleon:flterraforged-engine-api') using project(':engine-api')
+        }
+    }
+}

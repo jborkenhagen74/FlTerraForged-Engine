@@ -1,0 +1,104 @@
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+}
+
+group = providers.gradleProperty('flterraforged_engine_group').get()
+version = providers.gradleProperty('flterraforged_engine_version').get()
+
+base {
+    archivesName = 'flterraforged-engine'
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+    withSourcesJar()
+    withJavadocJar()
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 17
+    options.encoding = 'UTF-8'
+}
+
+repositories {
+    mavenLocal()
+    mavenCentral()
+
+    def remoteUrl = providers.gradleProperty('flterraforged_api_repository_url')
+            .orElse(providers.environmentVariable('FLTERRAFORGED_API_REPOSITORY_URL'))
+            .getOrNull()
+    if (remoteUrl != null && !remoteUrl.isBlank()) {
+        maven { url = uri(remoteUrl) }
+    }
+}
+
+dependencies {
+    api "dev.foucaultleon:flterraforged-engine-api:${providers.gradleProperty('flterraforged_engine_api_version').get()}"
+}
+
+tasks.register('verifyEngineIsolation') {
+    group = 'verification'
+    description = 'Rejects Minecraft, loader, TerraBlender and Conquest dependencies in the engine.'
+
+    doLast {
+        def banned = [
+                'net.minecraft.',
+                'net.fabricmc.',
+                'net.neoforged.',
+                'net.minecraftforge.',
+                'com.mojang.serialization.',
+                'terrablender',
+                'conquest'
+        ]
+        fileTree('src/main/java') { include '**/*.java' }.each { source ->
+            def text = source.getText('UTF-8').toLowerCase(Locale.ROOT)
+            banned.each { token ->
+                if (text.contains(token.toLowerCase(Locale.ROOT))) {
+                    throw new GradleException("Forbidden engine dependency '${token}' in ${source}")
+                }
+            }
+        }
+    }
+}
+
+tasks.register('verifyServiceProvider') {
+    group = 'verification'
+    description = 'Checks the ServiceLoader descriptor for the default engine provider.'
+    doLast {
+        def descriptor = file('src/main/resources/META-INF/services/dev.foucaultleon.flterraforged.engine.api.EngineProvider')
+        if (!descriptor.isFile()) {
+            throw new GradleException("Missing EngineProvider service descriptor")
+        }
+        def expected = 'dev.foucaultleon.flterraforged.engine.DefaultEngineProvider'
+        if (descriptor.getText('UTF-8').trim() != expected) {
+            throw new GradleException("Unexpected EngineProvider descriptor content")
+        }
+    }
+}
+
+tasks.register('smokeTest', JavaExec) {
+    group = 'verification'
+    description = 'Runs deterministic, concurrency and ServiceLoader checks without Minecraft.'
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'dev.foucaultleon.flterraforged.engine.EngineSmokeTest'
+    jvmArgs '-ea'
+}
+
+tasks.named('check') {
+    dependsOn 'verifyEngineIsolation'
+    dependsOn 'verifyServiceProvider'
+    dependsOn 'smokeTest'
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+            artifactId = 'flterraforged-engine'
+        }
+    }
+}
