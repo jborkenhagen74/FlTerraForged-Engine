@@ -1,3 +1,10 @@
+## 0.1.0-SNAPSHOT-r23
+
+- Fix engine compilation against the already-published 0.1 Engine API.
+- Keep the `flterraforged:lake_shore` semantic without requiring the newer `StandardTerrainTypes.LAKE_SHORE` convenience constant at compile time.
+- Add a regression test that verifies the shoreline semantic through the canonical terrain identifier.
+- Report provider version `0.1.0-SNAPSHOT-r23`.
+
 ## 0.1.0-SNAPSHOT-r22
 
 - Replace bilinear interpolation of depression-fill spill heights with connected basin identification. Every pond/lake basin now owns one constant continuous water surface.

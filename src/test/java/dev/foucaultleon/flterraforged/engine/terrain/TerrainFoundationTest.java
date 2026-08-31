@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import dev.foucaultleon.flterraforged.engine.DefaultTerrainWorld;
 import dev.foucaultleon.flterraforged.engine.EngineSettings;
 import dev.foucaultleon.flterraforged.engine.api.EngineContext;
+import dev.foucaultleon.flterraforged.engine.api.river.RiverSample;
 import dev.foucaultleon.flterraforged.engine.api.terrain.StandardTerrainTypes;
 import dev.foucaultleon.flterraforged.engine.api.terrain.TerrainSample;
 import dev.foucaultleon.flterraforged.engine.api.terrain.TerrainType;
@@ -117,6 +118,21 @@ final class TerrainFoundationTest {
         assertTrue(
                 Math.abs(left.height - right.height) < 1.0D,
                 "multi-region blending must not create a secondary-neighbor cliff");
+    }
+
+    @Test
+    void lakeShoreUsesCanonicalSemanticWithoutNewApiConstant() {
+        TerrainClassifier classifier = new TerrainClassifier();
+        TerrainType result = classifier.classify(
+                StandardTerrainTypes.PLAINS,
+                70.0D,
+                63,
+                0.1D,
+                0.5D,
+                RiverSample.UNAVAILABLE,
+                false,
+                true);
+        assertEquals(TerrainType.of(StandardTerrainTypes.NAMESPACE, "lake_shore"), result);
     }
 
     @Test

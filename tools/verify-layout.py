@@ -81,6 +81,12 @@ if "lake.materialWater()" not in river_model or "lake.shore()" not in river_mode
 if "EngineCapability.RIVER_WATER_LEVEL" not in engine:
     errors.append("Default engine does not advertise RIVER_WATER_LEVEL")
 
+terrain_classifier = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/terrain/TerrainClassifier.java").read_text(encoding="utf-8")
+if "StandardTerrainTypes.LAKE_SHORE" in terrain_classifier:
+    errors.append("TerrainClassifier must remain compatible with the baseline API that predates the LAKE_SHORE convenience constant")
+if 'TerrainType.of(StandardTerrainTypes.NAMESPACE, "lake_shore")' not in terrain_classifier:
+    errors.append("TerrainClassifier missing canonical flterraforged:lake_shore compatibility semantic")
+
 
 terrain_sampler = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/terrain/region/TerrainRegionSampler.java").read_text(encoding="utf-8")
 terrain_blender = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/terrain/Blender.java").read_text(encoding="utf-8")

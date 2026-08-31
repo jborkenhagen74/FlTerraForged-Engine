@@ -8,6 +8,16 @@ import java.util.Objects;
 /** Applies final semantic overrides to an engine-selected base terrain landform. */
 public final class TerrainClassifier {
 
+    /**
+     * Canonical dry shoreline semantic.
+     *
+     * <p>Defined locally instead of referencing the newer standard shoreline convenience constant so the
+     * engine remains source-compatible with the previously published 0.1 API, which did not yet
+     * expose that convenience constant.</p>
+     */
+    private static final TerrainType LAKE_SHORE =
+            TerrainType.of(StandardTerrainTypes.NAMESPACE, "lake_shore");
+
     private final TerrainClassificationSettings settings;
 
     /** Creates a terrain classifier using conservative standalone defaults. */
@@ -103,7 +113,7 @@ public final class TerrainClassifier {
             return StandardTerrainTypes.RIVER;
         }
         if (lakeShore) {
-            return StandardTerrainTypes.LAKE_SHORE;
+            return LAKE_SHORE;
         }
         if (height <= seaLevel + settings.coastHeightAboveSea()
                 || continentalness < settings.coastContinentalness()) {
