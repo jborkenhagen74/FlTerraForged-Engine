@@ -117,7 +117,7 @@ dev.foucaultleon:flterraforged-engine:0.1.0-SNAPSHOT
    center geometry. It produces stable continent IDs, corrected world-space
    centers and an inward coast/edge signal.
 4. **Terrain** — an independent terrain-region partition, terrain provider,
-   configured/composite landforms, boundary blending and `TerrainPopulator`.
+   configured/composite landforms, multi-region boundary blending and `TerrainPopulator`.
    Large continents can contain multiple deterministic plains, hills, valleys,
    plateaus and mountain regions without exposing Minecraft worldgen classes.
 5. **Erosion** — deterministic padded erosion regions, hydraulic virtual droplets,
@@ -209,3 +209,15 @@ surface correction. The cache is bounded to 256 tiles, uses access-order evictio
 expensive generation while holding the cache lock. Bulk tile generation shares the gradient border,
 reducing the hydrology work required for a complete 16x16 tile from 1280 point-style lookups to 324.
 
+
+## Multi-region terrain blending (r20)
+
+r20 replaces the previous owner/one-neighbor terrain transition with a guarded multi-region
+Voronoi blend. Biome/terrain ownership remains discrete for semantic routing, while the generated
+surface height and weirdness are interpolated across every active neighboring landform. This
+removes the large height seams that can occur when the second-nearest Voronoi region changes at a
+triple junction. The balanced preset uses a 0.50 blend width, gentle 0.60 and rugged 0.42.
+
+The more expensive neighborhood scan only runs inside the configured boundary band. Region
+interiors still resolve directly to their owning terrain, preserving the r19 cache-oriented hot
+path as much as possible.

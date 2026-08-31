@@ -1,3 +1,13 @@
+## 0.1.0-SNAPSHOT-r20
+
+- Replaced the two-region terrain boundary blend with a continuous four-influence Voronoi blender.
+- Terrain-region triple junctions no longer switch abruptly between different secondary landforms; all active neighbors inside a guarded Voronoi neighborhood participate continuously.
+- Neighbor influences fade smoothly and normalize together with the owning region, preserving distinct biome ownership while smoothing the underlying surface height.
+- Adjacent regions selecting the same terrain definition are merged before height evaluation.
+- Broadened terrain transition widths to 0.50 (balanced), 0.60 (gentle) and 0.42 (rugged).
+- Kept the multi-region scan off the hot path away from boundaries: ordinary region interiors still use the single owning terrain directly.
+- Preserved the r19 world sample cache and all r18 hydrology/runoff behavior.
+
 # Changelog
 
 ## 0.1.0-SNAPSHOT-r19

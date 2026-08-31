@@ -72,6 +72,15 @@ for token in ("bilinear", "smoothValueNoise", "waterSurface"):
 if "EngineCapability.RIVER_WATER_LEVEL" not in engine:
     errors.append("Default engine does not advertise RIVER_WATER_LEVEL")
 
+
+terrain_sampler = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/terrain/region/TerrainRegionSampler.java").read_text(encoding="utf-8")
+terrain_blender = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/terrain/Blender.java").read_text(encoding="utf-8")
+for token, label in (("sampleBlend", "multi-region terrain sampling"), ("NEIGHBORHOOD_SIZE", "full local Voronoi blending"), ("neighborScore", "continuous neighbor influence")):
+    if token not in terrain_sampler:
+        errors.append(f"TerrainRegionSampler missing {label}")
+if "TerrainRegionBlendSample" not in terrain_blender:
+    errors.append("Blender missing multi-region terrain composite support")
+
 if errors:
     print("\n".join(errors), file=sys.stderr)
     raise SystemExit(1)

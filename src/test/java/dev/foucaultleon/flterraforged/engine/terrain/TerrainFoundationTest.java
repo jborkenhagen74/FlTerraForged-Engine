@@ -10,7 +10,13 @@ import dev.foucaultleon.flterraforged.engine.EngineSettings;
 import dev.foucaultleon.flterraforged.engine.api.EngineContext;
 import dev.foucaultleon.flterraforged.engine.api.terrain.StandardTerrainTypes;
 import dev.foucaultleon.flterraforged.engine.api.terrain.TerrainSample;
+import dev.foucaultleon.flterraforged.engine.api.terrain.TerrainType;
+import dev.foucaultleon.flterraforged.engine.cell.Cell;
+import dev.foucaultleon.flterraforged.engine.continent.Continent;
+import dev.foucaultleon.flterraforged.engine.continent.ContinentCenter;
+import dev.foucaultleon.flterraforged.engine.continent.ContinentSample;
 import dev.foucaultleon.flterraforged.engine.noise.Noise2D;
+import dev.foucaultleon.flterraforged.engine.terrain.populator.TerrainPopulator;
 import dev.foucaultleon.flterraforged.engine.terrain.provider.DefaultTerrainProvider;
 import dev.foucaultleon.flterraforged.engine.terrain.provider.TerrainProvider;
 import dev.foucaultleon.flterraforged.engine.terrain.region.TerrainRegionSample;
@@ -83,6 +89,37 @@ final class TerrainFoundationTest {
     }
 
     @Test
+    void multiRegionBlenderRemovesSecondaryNeighborHeightSeams() {
+        EngineContext world = context(1L);
+        Continent continent = (x, z) -> new ContinentSample(
+                0.5D, 0.8D, new ContinentCenter(0, 0));
+        TerrainRegionSampler sampler = new TerrainRegionSampler(0x1234ABCDL, 0.004D, 0.78D);
+        TerrainProvider provider = selector -> {
+            if (selector < 0.24D) {
+                return flatTerrain(StandardTerrainTypes.PLAINS, TerrainCategory.FLAT, 68.0D);
+            }
+            if (selector < 0.47D) {
+                return flatTerrain(StandardTerrainTypes.HILLS, TerrainCategory.HILLS, 88.0D);
+            }
+            if (selector < 0.63D) {
+                return flatTerrain(StandardTerrainTypes.VALLEY, TerrainCategory.VALLEY, 58.0D);
+            }
+            if (selector < 0.80D) {
+                return flatTerrain(StandardTerrainTypes.PLATEAU, TerrainCategory.PLATEAU, 108.0D);
+            }
+            return flatTerrain(StandardTerrainTypes.MOUNTAINS, TerrainCategory.MOUNTAINS, 138.0D);
+        };
+        TerrainPopulator populator = new TerrainPopulator(world, continent, sampler, provider, 0.50D);
+
+        Cell left = populator.populate(new Cell(), -4, 771);
+        Cell right = populator.populate(new Cell(), -3, 771);
+
+        assertTrue(
+                Math.abs(left.height - right.height) < 1.0D,
+                "multi-region blending must not create a secondary-neighbor cliff");
+    }
+
+    @Test
     void defaultWorldUsesTerrainRegionsAndProducesFractionalHeights() {
         DefaultTerrainWorld world = new DefaultTerrainWorld(context(778899L), EngineSettings.defaults());
         Set<Object> types = new HashSet<>();
@@ -114,6 +151,28 @@ final class TerrainFoundationTest {
         } finally {
             executor.shutdownNow();
         }
+    }
+
+    private static Terrain flatTerrain(
+            TerrainType type,
+            TerrainCategory category,
+            double height) {
+        return new Terrain() {
+            @Override
+            public TerrainType type() {
+                return type;
+            }
+
+            @Override
+            public TerrainCategory category() {
+                return category;
+            }
+
+            @Override
+            public double height(TerrainContext terrainContext) {
+                return height;
+            }
+        };
     }
 
     private static EngineContext context(long seed) {

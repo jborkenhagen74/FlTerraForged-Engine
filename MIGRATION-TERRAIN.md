@@ -79,8 +79,11 @@ sample exposes:
 - owner cell coordinates.
 
 The owner and neighbor selectors are mapped by `TerrainProvider` to terrain
-definitions. `Blender` uses the region edge to produce a `CompositeTerrain`
-close to boundaries, avoiding hard height discontinuities between landforms.
+definitions. Since r20, `Blender` considers every active neighboring Voronoi
+region in a guarded local neighborhood instead of only one secondary region.
+The normalized weights fade continuously toward the edge of the blend band,
+avoiding hard height discontinuities at ordinary boundaries and Voronoi triple
+junctions.
 
 ## Cell integration
 

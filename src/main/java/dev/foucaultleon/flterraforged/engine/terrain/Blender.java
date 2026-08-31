@@ -1,6 +1,9 @@
 package dev.foucaultleon.flterraforged.engine.terrain;
 
 import dev.foucaultleon.flterraforged.engine.internal.Maths;
+import dev.foucaultleon.flterraforged.engine.terrain.provider.TerrainProvider;
+import dev.foucaultleon.flterraforged.engine.terrain.region.TerrainRegionBlendSample;
+import java.util.Arrays;
 import java.util.Objects;
 
 /** Utility methods for smooth landform transitions across terrain-region boundaries. */
@@ -36,5 +39,57 @@ public final class Blender {
         double alpha = Maths.smooth(Maths.clamp(edge / blendWidth, 0.0D, 1.0D));
         double primaryWeight = 0.5D + alpha * 0.5D;
         return new CompositeTerrain(primary, secondary, primaryWeight);
+    }
+
+    /**
+     * Resolves a true multi-region terrain blend.
+     *
+     * <p>Selectors that resolve to the same terrain definition are merged before the composite is
+     * constructed. This avoids unnecessary work when multiple adjacent Voronoi regions happen to
+     * select the same landform.</p>
+     *
+     * @param provider terrain definition provider
+     * @param sample normalized multi-region influence sample
+     * @return owning terrain or a multi-region composite
+     */
+    public static Terrain blend(TerrainProvider provider, TerrainRegionBlendSample sample) {
+        Objects.requireNonNull(provider, "provider");
+        Objects.requireNonNull(sample, "sample");
+        Terrain primary = provider.resolve(sample.primary().id());
+        if (sample.size() == 1) {
+            return primary;
+        }
+
+        Terrain[] components = new Terrain[sample.size()];
+        double[] weights = new double[sample.size()];
+        int count = 0;
+        for (int influence = 0; influence < sample.size(); influence++) {
+            Terrain terrain = provider.resolve(sample.id(influence));
+            double weight = sample.weight(influence);
+            int existing = identityIndex(components, count, terrain);
+            if (existing >= 0) {
+                weights[existing] += weight;
+            } else {
+                components[count] = terrain;
+                weights[count] = weight;
+                count++;
+            }
+        }
+        if (count == 1) {
+            return primary;
+        }
+        return new CompositeTerrain(
+                primary,
+                Arrays.copyOf(components, count),
+                Arrays.copyOf(weights, count));
+    }
+
+    private static int identityIndex(Terrain[] terrains, int count, Terrain terrain) {
+        for (int index = 0; index < count; index++) {
+            if (terrains[index] == terrain) {
+                return index;
+            }
+        }
+        return -1;
     }
 }

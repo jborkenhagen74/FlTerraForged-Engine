@@ -8,6 +8,7 @@ import dev.foucaultleon.flterraforged.engine.terrain.Blender;
 import dev.foucaultleon.flterraforged.engine.terrain.Terrain;
 import dev.foucaultleon.flterraforged.engine.terrain.TerrainContext;
 import dev.foucaultleon.flterraforged.engine.terrain.provider.TerrainProvider;
+import dev.foucaultleon.flterraforged.engine.terrain.region.TerrainRegionBlendSample;
 import dev.foucaultleon.flterraforged.engine.terrain.region.TerrainRegionSample;
 import dev.foucaultleon.flterraforged.engine.terrain.region.TerrainRegionSampler;
 import java.util.Objects;
@@ -61,8 +62,11 @@ public final class TerrainPopulator {
         ContinentSample continentSample = continent.sample(x, z);
         TerrainRegionSample region = regions.sample(x, z);
         Terrain primary = terrains.resolve(region.id());
-        Terrain secondary = terrains.resolve(region.neighborId());
-        Terrain terrain = Blender.blend(primary, secondary, region.edge(), blendWidth);
+        Terrain terrain = primary;
+        if (region.edge() < blendWidth) {
+            TerrainRegionBlendSample blend = regions.sampleBlend(x, z, blendWidth, region);
+            terrain = Blender.blend(terrains, blend);
+        }
         TerrainContext context = new TerrainContext(world, x, z, continentSample, region);
 
         cell.continentId = continentSample.id();

@@ -112,8 +112,8 @@ the external engine boundary.
 Terrain is now a first-class cell stage instead of a single bootstrap height
 formula. A deterministic `TerrainRegionSampler` partitions land independently
 inside continents. `TerrainProvider` maps each owner and nearest neighbor region
-to engine-neutral landforms, `Blender` smooths transitions at region boundaries,
-and `TerrainPopulator` writes the selected terrain, region, base height and
+to engine-neutral landforms, `Blender` smooths transitions across all active neighboring regions at region
+boundaries, and `TerrainPopulator` writes the selected terrain, region, base height and
 weirdness signals into the general engine `Cell`.
 
 `ConfiguredTerrain` and `CompositeTerrain` deliberately contain no Mojang
