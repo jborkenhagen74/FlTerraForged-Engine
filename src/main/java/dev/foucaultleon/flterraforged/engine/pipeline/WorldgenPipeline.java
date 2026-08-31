@@ -37,7 +37,7 @@ import java.util.Objects;
  * Fully assembled, immutable world-generation pipeline for one world seed.
  *
  * <p>The class is the single composition root for all engine stages. It guarantees the ordering
- * {@code continent -> terrain -> erosion -> river -> climate} and prevents individual stages from
+ * {@code continent -> terrain -> erosion -> climate-runoff -> river -> climate} and prevents individual stages from
  * being accidentally wired against different continent or terrain sources.</p>
  */
 public final class WorldgenPipeline implements CellLookup {
@@ -98,13 +98,6 @@ public final class WorldgenPipeline implements CellLookup {
                 context,
                 baseLookup,
                 ErosionSettings.from(settings));
-        this.river = new RiverModel(
-                seed ^ RIVER_SEED,
-                context,
-                erosion,
-                baseLookup,
-                RiverSettings.from(settings));
-        this.terrain = new TerrainModel(context, river);
 
         ClimateSettings climateSettings = ClimateSettings.from(settings);
         ClimateRegionSampler climateRegions = new ClimateRegionSampler(
@@ -113,6 +106,22 @@ public final class WorldgenPipeline implements CellLookup {
                 climateSettings.regionJitter());
         Noise2D temperatureNoise = fractal(seed, TEMPERATURE_SEED, 1.0D, 3, 0.50D, 2.0D);
         Noise2D moistureNoise = fractal(seed, MOISTURE_SEED, 1.0D, 3, 0.50D, 2.0D);
+        ClimateModel drainageClimate = new ClimateModel(
+                context,
+                baseLookup,
+                temperatureNoise,
+                moistureNoise,
+                climateRegions,
+                climateSettings);
+
+        this.river = new RiverModel(
+                seed ^ RIVER_SEED,
+                context,
+                erosion,
+                baseLookup,
+                drainageClimate,
+                RiverSettings.from(settings));
+        this.terrain = new TerrainModel(context, river);
         this.climate = new ClimateModel(
                 context,
                 river,

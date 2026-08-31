@@ -38,11 +38,39 @@ public final class RiverModel implements CellLookup {
             CellLookup erodedTerrain,
             CellLookup drainageTerrain,
             RiverSettings settings) {
+        this(seed, world, erodedTerrain, drainageTerrain, null, settings);
+    }
+
+    /**
+     * Creates a river model with a pre-hydrology climate lookup for runoff weighting.
+     *
+     * <p>The climate lookup must not depend on this river model. It is sampled only while building
+     * drainage maps and allows dry catchments to contribute less runoff while preserving large
+     * through-flowing rivers that originated in wetter terrain.</p>
+     *
+     * @param seed hydrology seed
+     * @param world immutable world context
+     * @param erodedTerrain terrain stage after erosion and before river/lake incision
+     * @param drainageTerrain terrain lookup used to build the coarse drainage topology
+     * @param drainageClimate pre-river climate lookup used to weight local runoff, or {@code null}
+     * @param settings river settings
+     */
+    public RiverModel(
+            long seed,
+            EngineContext world,
+            CellLookup erodedTerrain,
+            CellLookup drainageTerrain,
+            CellLookup drainageClimate,
+            RiverSettings settings) {
         this.world = Objects.requireNonNull(world, "world");
         this.erodedTerrain = Objects.requireNonNull(erodedTerrain, "erodedTerrain");
         this.settings = Objects.requireNonNull(settings, "settings");
         this.generator = new RivermapGenerator(
-                seed, world, Objects.requireNonNull(drainageTerrain, "drainageTerrain"), settings);
+                seed,
+                world,
+                Objects.requireNonNull(drainageTerrain, "drainageTerrain"),
+                drainageClimate,
+                settings);
         this.cache = new MapCache(settings.cacheSize());
     }
 

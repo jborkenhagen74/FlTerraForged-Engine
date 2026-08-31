@@ -31,6 +31,7 @@ public final class RivermapGenerator {
     private final long seed;
     private final EngineContext world;
     private final CellLookup terrain;
+    private final CellLookup climate;
     private final RiverSettings settings;
 
     /**
@@ -39,12 +40,19 @@ public final class RivermapGenerator {
      * @param seed hydrology seed
      * @param world immutable world context
      * @param terrain broad terrain lookup used for drainage topology and visible-path refinement
+     * @param climate pre-river climate lookup used to weight local runoff, or {@code null}
      * @param settings river settings
      */
-    public RivermapGenerator(long seed, EngineContext world, CellLookup terrain, RiverSettings settings) {
+    public RivermapGenerator(
+            long seed,
+            EngineContext world,
+            CellLookup terrain,
+            CellLookup climate,
+            RiverSettings settings) {
         this.seed = seed;
         this.world = Objects.requireNonNull(world, "world");
         this.terrain = Objects.requireNonNull(terrain, "terrain");
+        this.climate = climate;
         this.settings = Objects.requireNonNull(settings, "settings");
     }
 
@@ -69,9 +77,9 @@ public final class RivermapGenerator {
         int[] downstream = new int[count];
         double[] flow = new double[count];
         Arrays.fill(downstream, -1);
-        Arrays.fill(flow, 1.0D);
 
         Cell scratch = new Cell();
+        Cell climateScratch = climate == null ? null : new Cell();
         for (int gz = 0; gz < nodesPerAxis; gz++) {
             for (int gx = 0; gx < nodesPerAxis; gx++) {
                 int index = gz * nodesPerAxis + gx;
@@ -80,6 +88,12 @@ public final class RivermapGenerator {
                 terrain.lookup(x, z, scratch);
                 heights[index] = scratch.heightErosion;
                 continentEdges[index] = scratch.continentEdge;
+                if (climateScratch == null) {
+                    flow[index] = 1.0D;
+                } else {
+                    climate.lookup(x, z, climateScratch);
+                    flow[index] = localRunoff(climateScratch.temperature, climateScratch.moisture);
+                }
             }
         }
 
@@ -318,6 +332,18 @@ public final class RivermapGenerator {
                 }
             }
         }
+    }
+
+
+    private static double localRunoff(double temperature, double moisture) {
+        double boundedMoisture = Maths.clamp(moisture, 0.0D, 1.0D);
+        double wetness = Maths.smooth(Maths.clamp((boundedMoisture - 0.14D) / 0.72D, 0.0D, 1.0D));
+        double runoff = 0.16D + wetness * 1.04D;
+
+        double hot = Maths.smooth(Maths.clamp((temperature - 0.66D) / 0.24D, 0.0D, 1.0D));
+        double dryness = 1.0D - wetness;
+        runoff *= 1.0D - hot * dryness * 0.58D;
+        return Maths.clamp(runoff, 0.07D, 1.20D);
     }
 
     private boolean visibleChannel(double sourceFlow, double targetFlow) {

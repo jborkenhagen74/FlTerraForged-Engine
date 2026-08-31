@@ -123,7 +123,7 @@ dev.foucaultleon:flterraforged-engine:0.1.0-SNAPSHOT
 5. **Erosion** — deterministic padded erosion regions, hydraulic virtual droplets,
    sediment carry/deposition, thermal talus relaxation and a bounded immutable-tile
    cache. Erosion writes the explicit pre-river surface to `Cell.heightErosion`.
-6. **River / Rivermap** — globally aligned depression-aware drainage, deterministic flow
+6. **River / Rivermap** — globally aligned depression-aware drainage, climate-weighted runoff
    accumulation, D8 topology hidden behind terrain-refined visible paths, flow-derived
    width/depth, minimum wet-channel depth, irregular priority-flood ponds/lakes, bounded
    map caching and post-erosion hydrology incision. `Cell.riverMask` represents
@@ -136,7 +136,7 @@ dev.foucaultleon:flterraforged-engine:0.1.0-SNAPSHOT
 The active world flow is now assembled exclusively by `WorldgenPipeline`:
 
 ```text
-continent -> terrain -> erosion -> river/rivermap -> climate -> API sample
+continent -> terrain -> erosion -> pre-river climate runoff -> river/rivermap -> final climate -> API sample
 ```
 
 `DefaultTerrainWorld` delegates to that composition root instead of wiring stages itself.
@@ -188,3 +188,15 @@ Channel incision now reserves bank freeboard and a minimum wet core. During fina
 checks that water still clears the actual eroded local bed and deepens the channel locally when needed;
 it does not raise an individual water column and therefore preserves downstream-monotonic water levels.
 Explicit waterfall shaping remains future work.
+
+## Climate-weighted runoff and sparser rivers (r18)
+
+r18 uses the same broad climate fields twice without creating a dependency cycle. A pre-river view
+is sampled from base terrain only and contributes runoff weights to the drainage graph; the final
+climate pass still runs after hydrology and retains river-local moisture feedback. Hot/dry drainage
+cells therefore contribute little local runoff, while humid cells contribute strongly. Large rivers
+that accumulated flow upstream can still cross dry regions.
+
+Default drainage spacing is wider, visible/headwater thresholds are higher, and each Rivermap now
+uses 16 padding cells instead of 10. The result is fewer small watercourses and substantially more
+shared catchment context across neighboring map boundaries.

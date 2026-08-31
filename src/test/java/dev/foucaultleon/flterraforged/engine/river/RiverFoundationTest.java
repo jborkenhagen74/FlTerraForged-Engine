@@ -143,6 +143,38 @@ final class RiverFoundationTest {
         }
     }
 
+
+    @Test
+    void dryCatchmentsProduceFarFewerLocalChannelsThanWetCatchments() {
+        EngineContext context = new EngineContext(12345L, -64, 320, 63);
+        CellLookup terrain = syntheticDrainageSurface();
+        CellLookup wetClimate = climate(0.55D, 0.82D, terrain);
+        CellLookup dryClimate = climate(0.84D, 0.22D, terrain);
+        RiverSettings settings = climateAwareSettings();
+
+        RiverModel wet = new RiverModel(991L, context, terrain, terrain, wetClimate, settings);
+        RiverModel dry = new RiverModel(991L, context, terrain, terrain, dryClimate, settings);
+
+        int wetSegments = wet.map(0, 0).segments().size();
+        int drySegments = dry.map(0, 0).segments().size();
+        assertTrue(wetSegments > 0, "expected wet catchment channels");
+        assertTrue(drySegments < wetSegments / 2, "dry catchment should suppress most local channels");
+    }
+
+    @Test
+    void establishedChannelRemainsWetAcrossRegionBoundaryWithExpandedPadding() {
+        EngineContext context = new EngineContext(12345L, -64, 320, 63);
+        CellLookup terrain = syntheticDrainageSurface();
+        RiverSettings settings = climateAwareSettings();
+        RiverModel river = new RiverModel(991L, context, terrain, terrain, climate(0.55D, 0.82D, terrain), settings);
+        int boundaryZ = settings.regionSize();
+
+        RiverSample before = river.sample(96, boundaryZ - 8);
+        RiverSample after = river.sample(96, boundaryZ + 8);
+        assertTrue(before.depth() > 0.0D, "river should be wet before map boundary");
+        assertTrue(after.depth() > 0.0D, "river should remain wet after map boundary");
+    }
+
     @Test
     void concurrentRivermapSamplingIsStable() throws Exception {
         RiverModel river = model(775533L);
@@ -177,6 +209,37 @@ final class RiverFoundationTest {
             target.heightErosion = target.height;
             target.continentEdge = 0.85D;
         };
+    }
+
+
+    private static CellLookup climate(double temperature, double moisture, CellLookup terrain) {
+        return (x, z, target) -> {
+            terrain.lookup(x, z, target);
+            target.temperature = temperature;
+            target.moisture = moisture;
+        };
+    }
+
+    private static RiverSettings climateAwareSettings() {
+        return new RiverSettings(
+                480,
+                24,
+                16,
+                5.5D,
+                3.5D,
+                2.0D,
+                16.0D,
+                7.0D,
+                1.35D,
+                1.05D,
+                1.35D,
+                4.25D,
+                0.45D,
+                0.48D,
+                7,
+                0.85D,
+                1.35D,
+                16);
     }
 
     private static RiverSettings settings() {

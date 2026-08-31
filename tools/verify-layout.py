@@ -22,6 +22,14 @@ if not service.is_file():
 
 build_text = (root / "build.gradle").read_text(encoding="utf-8")
 workflow_text = (root / ".github/workflows/build.yml").read_text(encoding="utf-8")
+gitignore_text = (root / ".gitignore").read_text(encoding="utf-8")
+if "options.addBooleanOption('Werror', true)" not in build_text:
+    errors.append("strict Javadoc -Werror verification is missing")
+if "dependsOn 'javadoc'" not in build_text:
+    errors.append("check must depend on javadoc so documentation warnings fail before publish")
+for ignored in ("gradlew", "gradlew.bat", "gradle/wrapper/"):
+    if ignored not in gitignore_text.splitlines():
+        errors.append(f".gitignore missing required wrapper rule: {ignored}")
 if "maven.pkg.github.com" in build_text:
     errors.append("Engine API must not be resolved from GitHub Packages")
 if "FLTERRAFORGED_PACKAGES_TOKEN" in build_text or "FLTERRAFORGED_PACKAGES_TOKEN" in workflow_text:
@@ -49,10 +57,11 @@ for token, label in (
         ("refineVisiblePath", "terrain-guided centerline refinement"),
         ("LakeField", "pond/lake construction"),
         ("accumulateFlow", "acyclic flow accumulation"),
+        ("localRunoff", "climate-weighted runoff"),
 ):
     if token not in river_generator:
         errors.append(f"RivermapGenerator missing {label}")
-for token in ("riverWaterSurfaceHeight", "riverFlow", "minimumWaterDepth", "nearestLake"):
+for token in ("riverWaterSurfaceHeight", "riverFlow", "minimumWaterDepth", "nearestLake", "drainageClimate"):
     if token not in river_model:
         errors.append(f"Engine hydrology pipeline missing {token}")
 if "public boolean lake" not in cell:

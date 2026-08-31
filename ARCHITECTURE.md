@@ -36,6 +36,7 @@ DefaultTerrainWorld (one seed/world)
         |    |    +-- HydraulicErosionFilter
         |    |    +-- ThermalErosionFilter
         |    |    +-- bounded immutable ErosionTile cache
+        |    +-- pre-river ClimateModel / runoff weights
         |    +-- RiverModel
         |         +-- RivermapGenerator / D8 drainage
         |         +-- immutable RiverSegment network
@@ -150,7 +151,9 @@ Minecraft terrain blocks and decoration remain outside this stage.
 Hydrology is terrain-driven rather than an independent fractal mask. `RivermapGenerator`
 samples a globally aligned drainage grid, runs a priority-flood pass to resolve local
 depressions/spill elevations, then uses D8 only as a deterministic topology skeleton.
-Flow accumulation promotes channels, but each visible edge is refined into a multi-point
+Flow accumulation promotes channels. r18 weights each node by a pre-river climate sample, so
+hot/dry catchments contribute much less local runoff than humid catchments while established
+upstream rivers can continue through arid regions. Each visible edge is refined into a multi-point
 terrain-guided path so axis/diagonal grid directions are not exposed as river geometry.
 
 The depression-fill delta is retained as an immutable `LakeField`. Meaningful inland
@@ -162,7 +165,8 @@ eroded `Cell.heightErosion`. It reserves a bank freeboard and minimum wet core, 
 deepen the local bed when post-erosion detail would otherwise interrupt water. The water
 surface itself remains downstream-monotonic. `Cell.lake` distinguishes pond/lake samples
 from linear channels; `Cell.height` is the final hydrology-shaped surface. Immutable
-`Rivermap` objects remain bounded-LRU cached and boundary-aware.
+`Rivermap` objects remain bounded-LRU cached and boundary-aware. r18 expands map padding to 16
+drainage cells, giving neighboring maps more shared upstream context and reducing edge cutoffs.
 
 The stable Engine API still exposes distance, width, depth, water-surface height and flow
 through `RiverSample`; lake samples reuse those numeric hydrology signals while final
@@ -225,8 +229,9 @@ No GitHub Packages credential is part of the Engine API contract.
 ### Integrated pipeline composition (r14)
 
 The seven migrated foundations are now composed by a single `WorldgenPipeline`. This class is the
-world-seed-bound composition root and owns the stage order `continent -> terrain -> erosion ->
-river -> climate`. `DefaultTerrainWorld` no longer constructs stage dependencies itself and only
+world-seed-bound composition root. r18 evaluates a pre-river climate view for runoff only, yielding
+`continent -> terrain -> erosion -> climate-runoff -> river -> final climate`. `DefaultTerrainWorld`
+no longer constructs stage dependencies itself and only
 projects pipeline results to the stable Engine API.
 
 The integration also closes a previous internal data gap: `RiverModel` writes nearest-channel

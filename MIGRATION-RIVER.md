@@ -126,3 +126,19 @@ perpendicular candidates and prefer lower terrain while retaining deterministic 
 River width/depth still grow with flow, but the channel profile now has a stable wet core and the final
 `RiverModel` can deepen that core against post-erosion terrain to preserve minimum water depth without
 locally lifting the water surface.
+
+
+## r18 climate-weighted runoff and boundary stability
+
+r18 keeps drainage topology terrain-driven but no longer treats every grid cell as one identical
+unit of rainfall. A pre-hydrology climate view samples the same broad temperature/moisture fields
+without river moisture feedback. Local runoff is then accumulated through the D8/priority-flood
+graph. Wet catchments therefore reach visible-channel thresholds quickly, whereas hot and dry
+catchments need much larger drainage areas. This deliberately allows exceptional through-flowing
+desert rivers when their upstream basin is wetter instead of globally banning rivers from arid
+terrain.
+
+The default drainage spacing is wider and visible-flow thresholds are higher, reducing the number
+of small streams. Hydrology padding grows from 10 to 16 cells so region-edge nodes see substantially
+more of the same upstream catchment. That additional shared context reduces false headwater resets
+and visible channel cutoffs at Rivermap boundaries without changing the stable Engine API.

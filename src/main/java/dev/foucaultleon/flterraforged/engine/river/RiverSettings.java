@@ -119,15 +119,15 @@ public record RiverSettings(
     public static RiverSettings from(EngineSettings settings) {
         Objects.requireNonNull(settings, "settings");
         double density = Math.sqrt(settings.riverScale() / 0.00110D);
-        int spacing = clampMultiple((int) Math.round(18.0D / Math.max(0.25D, density)), 12, 32, 4);
+        int spacing = clampMultiple((int) Math.round(22.0D / Math.max(0.25D, density)), 16, 36, 4);
         int region = spacing * 20;
         double maximumWaterDepth = Math.max(2.25D, Math.min(4.75D, settings.riverDepth() * 0.62D));
         return new RiverSettings(
                 region,
                 spacing,
-                10,
-                5.0D,
-                2.5D,
+                16,
+                5.5D,
+                3.5D,
                 2.0D,
                 16.0D,
                 settings.riverDepth(),

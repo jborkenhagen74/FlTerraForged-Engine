@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.0-SNAPSHOT-r18
+
+- Weight drainage accumulation by pre-river climate runoff: humid catchments contribute strongly, while hot/dry catchments contribute only a small fraction. Major rivers can still cross deserts when their upstream catchment is wet.
+- Reduce overall river density with wider drainage-grid spacing and higher visible-flow/headwater thresholds.
+- Increase hydrology padding from 10 to 16 grid cells so neighboring maps share substantially more upstream context, reducing channels that disappear at region boundaries.
+- Keep the final climate pass after hydrology so river-local moisture feedback remains intact; a separate pre-river climate view is used only for runoff weighting and avoids a dependency cycle.
+- Preserve strict Javadoc `-Werror` verification through `check`; all new public constructor parameters are documented.
+- Report provider version `0.1.0-SNAPSHOT-r18`.
+
 ## 0.1.0-SNAPSHOT-r17
 
 - Fix strict Javadoc generation for compact constructors in `Rivermap`, `RiverSegment` and `RiverSettings` by documenting every implicit record-constructor parameter.
