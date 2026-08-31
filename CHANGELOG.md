@@ -1,3 +1,11 @@
+## 0.1.0-SNAPSHOT-r25
+
+- Fix strict Javadoc generation for the compact constructors of `EngineSettings` and `ClimateSettings`.
+- Document all 58 constructor parameters required by Javadoc `-Werror`.
+- Extend `tools/verify-layout.py` so every public compact record constructor must document every record component with `@param`.
+- Keep all r24 terrain, climate-layout, continent, hydrology, blending and caching behavior unchanged.
+- Report provider version `0.1.0-SNAPSHOT-r25`.
+
 ## 0.1.0-SNAPSHOT-r24
 
 - Add the `central_europe` Engine preset with shorter terrain-region cadence and explicit terrain-region weights favouring hills and valleys over mountains.

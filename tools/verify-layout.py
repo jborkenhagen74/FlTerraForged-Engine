@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from pathlib import Path
+import re
 import sys
 
 root = Path(__file__).resolve().parents[1]
@@ -15,6 +16,66 @@ for source in java_root.rglob("*.java"):
     for token in banned:
         if token in text:
             errors.append(f"{source.relative_to(root)}: forbidden {token}")
+
+
+def split_record_components(component_text):
+    """Returns record component declarations split on top-level commas."""
+    parts = []
+    current = []
+    angle = paren = bracket = 0
+    for char in component_text:
+        if char == '<':
+            angle += 1
+        elif char == '>':
+            angle = max(0, angle - 1)
+        elif char == '(':
+            paren += 1
+        elif char == ')':
+            paren = max(0, paren - 1)
+        elif char == '[':
+            bracket += 1
+        elif char == ']':
+            bracket = max(0, bracket - 1)
+        if char == ',' and angle == 0 and paren == 0 and bracket == 0:
+            parts.append(''.join(current).strip())
+            current = []
+        else:
+            current.append(char)
+    if current:
+        parts.append(''.join(current).strip())
+    return [part for part in parts if part]
+
+
+def verify_compact_record_javadocs(source, text):
+    """Requires complete @param docs on every public compact record constructor."""
+    for match in re.finditer(r"public\s+record\s+(\w+)\s*\((.*?)\)\s*\{", text, re.DOTALL):
+        record_name = match.group(1)
+        components = []
+        for declaration in split_record_components(match.group(2)):
+            name_match = re.search(r"([A-Za-z_$][A-Za-z0-9_$]*)\s*$", declaration)
+            if name_match:
+                components.append(name_match.group(1))
+
+        ctor_match = re.search(r"\bpublic\s+" + re.escape(record_name) + r"\s*\{", text[match.end():])
+        if ctor_match is None:
+            continue
+        ctor_start = match.end() + ctor_match.start()
+        prefix = text[:ctor_start]
+        doc_start = prefix.rfind('/**')
+        doc_end = prefix.find('*/', doc_start) if doc_start >= 0 else -1
+        if doc_start < 0 or doc_end < 0 or prefix[doc_end + 2:].strip():
+            errors.append(f"{source.relative_to(root)}: public compact constructor {record_name} is missing Javadoc")
+            continue
+        doc = prefix[doc_start:doc_end + 2]
+        for component in components:
+            if re.search(r"@param\s+" + re.escape(component) + r"(?:\s|$)", doc) is None:
+                errors.append(
+                    f"{source.relative_to(root)}: compact constructor {record_name} missing @param {component}"
+                )
+
+
+for source in java_root.rglob("*.java"):
+    verify_compact_record_javadocs(source, source.read_text(encoding="utf-8"))
 
 service = root / "src/main/resources/META-INF/services/dev.foucaultleon.flterraforged.engine.api.EngineProvider"
 if not service.is_file():

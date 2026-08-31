@@ -43,7 +43,27 @@ public record ClimateSettings(
         double northMoisture,
         double southMoisture) {
 
-    /** Validates climate settings. */
+    /**
+     * Validates climate settings.
+     *
+     * @param scale frequency of broad continuous climate noise
+     * @param regionScale frequency of macro climate-region partitioning
+     * @param regionJitter jitter applied to macro climate-region points
+     * @param regionBlend normalized width used to blend neighboring climate regions
+     * @param regionalContrast contrast of region anchors around neutral climate
+     * @param altitudeCooling temperature reduction per 256 blocks above sea level
+     * @param continentalDryness moisture reduction toward continental interiors
+     * @param riverMoisture moisture bonus at river centerlines
+     * @param oceanModeration strength with which coasts moderate temperature toward neutral
+     * @param layout configured large-scale climate arrangement
+     * @param northSouthCenterZ world Z coordinate at the center of the north-south profile
+     * @param northSouthSpan distance from northern to southern anchor in blocks
+     * @param northSouthStrength contribution of the north-south baseline to final climate
+     * @param northTemperature northern temperature anchor
+     * @param southTemperature southern temperature anchor
+     * @param northMoisture northern moisture anchor
+     * @param southMoisture southern moisture anchor
+     */
     public ClimateSettings {
         positive(scale, "scale");
         positive(regionScale, "regionScale");

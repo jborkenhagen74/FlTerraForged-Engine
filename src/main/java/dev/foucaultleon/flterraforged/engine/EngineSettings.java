@@ -92,7 +92,51 @@ public record EngineSettings(
         double thermalErosionStrength,
         double erosionMaxDelta) {
 
-    /** Validates cross-field terrain distribution constraints. */
+    /**
+     * Validates engine settings.
+     *
+     * @param continentScale base spatial frequency used to derive tectonic continent-cell size
+     * @param continentJitter fractional displacement of tectonic continent points
+     * @param continentSkipping threshold for suppressing non-origin continent cells
+     * @param continentSizeVariance maximum continent-cell size variance
+     * @param continentWarpStrength continent warp strength relative to tectonic cell size
+     * @param continentCoastRoughness normalized coastline modulation strength
+     * @param terrainScale spatial scale of broad terrain-shape noise
+     * @param detailScale spatial scale of small terrain detail
+     * @param terrainRegionScale spatial frequency of terrain-region partitioning
+     * @param terrainRegionJitter fractional displacement of terrain-region points
+     * @param terrainBlendWidth normalized blend width around terrain-region boundaries
+     * @param terrainPlainsWeight relative selection weight of plains regions
+     * @param terrainHillsWeight relative selection weight of hills regions
+     * @param terrainValleyWeight relative selection weight of valley regions
+     * @param terrainPlateauWeight relative selection weight of plateau regions
+     * @param terrainMountainWeight relative selection weight of mountain regions
+     * @param climateScale spatial scale of broad temperature and moisture fields
+     * @param climateRegionScale spatial frequency of macro climate-region partitioning
+     * @param climateRegionJitter fractional displacement of climate-region points
+     * @param climateRegionBlend normalized climate-region boundary blend width
+     * @param climateRegionalContrast contrast of seeded regional climate anchors around neutral climate
+     * @param climateAltitudeCooling temperature reduction per 256 blocks above sea level
+     * @param climateContinentalDryness moisture reduction toward continental interiors
+     * @param climateRiverMoisture moisture bonus at river centerlines
+     * @param climateOceanModeration coastal temperature moderation strength
+     * @param climateLayout large-scale climate arrangement strategy
+     * @param climateNorthSouthCenterZ world Z coordinate representing the middle of a north-south profile
+     * @param climateNorthSouthSpan distance in blocks from the cold northern anchor to the warm southern anchor
+     * @param climateNorthSouthStrength blend strength of the north-south baseline over randomized climate
+     * @param climateNorthTemperature northern temperature anchor in {@code [0, 1]}
+     * @param climateSouthTemperature southern temperature anchor in {@code [0, 1]}
+     * @param climateNorthMoisture northern moisture anchor in {@code [0, 1]}
+     * @param climateSouthMoisture southern moisture anchor in {@code [0, 1]}
+     * @param riverScale hydrology density scale used to derive drainage-grid spacing
+     * @param relief base continental relief in blocks
+     * @param mountainRelief additional mountain relief in blocks
+     * @param riverDepth maximum drainage-network river incision depth in blocks
+     * @param erosionStrength hydraulic erosion strength multiplier
+     * @param erosionDeposition hydraulic deposition strength multiplier
+     * @param thermalErosionStrength thermal slope-relaxation strength
+     * @param erosionMaxDelta maximum absolute erosion/deposition height change in blocks
+     */
     public EngineSettings {
         double terrainWeightSum = terrainPlainsWeight + terrainHillsWeight + terrainValleyWeight
                 + terrainPlateauWeight + terrainMountainWeight;
