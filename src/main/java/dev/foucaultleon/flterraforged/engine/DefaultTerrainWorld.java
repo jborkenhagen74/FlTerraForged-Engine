@@ -6,11 +6,12 @@ import dev.foucaultleon.flterraforged.engine.api.terrain.TerrainSample;
 import dev.foucaultleon.flterraforged.engine.pipeline.WorldgenPipeline;
 import java.util.Objects;
 
-/** Seed-bound, immutable and thread-safe world sampler. */
+/** Seed-bound, deterministic and thread-safe world sampler with shared final-sample caching. */
 public final class DefaultTerrainWorld implements TerrainWorld {
 
     private final EngineContext context;
     private final WorldgenPipeline pipeline;
+    private final WorldSampleCache sampleCache;
 
     /**
      * Creates a deterministic terrain view for one world.
@@ -21,6 +22,7 @@ public final class DefaultTerrainWorld implements TerrainWorld {
     public DefaultTerrainWorld(EngineContext context, EngineSettings settings) {
         this.context = Objects.requireNonNull(context, "context");
         this.pipeline = new WorldgenPipeline(context, Objects.requireNonNull(settings, "settings"));
+        this.sampleCache = new WorldSampleCache(pipeline);
     }
 
     /** {@inheritDoc} */
@@ -32,6 +34,12 @@ public final class DefaultTerrainWorld implements TerrainWorld {
     /** {@inheritDoc} */
     @Override
     public TerrainSample sample(int x, int z) {
-        return pipeline.sample(x, z);
+        return sampleCache.sample(x, z);
+    }
+
+    /** Releases world-scoped cached terrain tiles. */
+    @Override
+    public void close() {
+        sampleCache.clear();
     }
 }

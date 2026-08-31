@@ -252,3 +252,21 @@ Directed `RiverSegment` sampling now produces a continuous channel water-surface
 Y. `RiverModel` stores it in `Cell.riverWaterSurfaceHeight` together with `Cell.riverFlow`, and
 `WorldgenPipeline` projects both into `RiverSample`. This remains semantic Java-only data; Minecraft
 fluid placement belongs to the host adapter.
+
+## World-scoped final-sample cache (r19)
+
+The engine now places a bounded cache above the fully assembled `WorldgenPipeline`. Minecraft can
+ask the same X/Z column repeatedly while selecting biomes, reshaping density, answering height
+queries and repairing the final surface; all of those consumers now receive the same immutable
+`TerrainSample` object from a chunk-aligned 16x16 tile.
+
+The cache retains at most 256 completed tiles with access-order LRU eviction. Cache lookup and
+insertion use short synchronized sections only. Tile generation never runs under the cache lock,
+and the design intentionally avoids recursive `computeIfAbsent`/future wait graphs. A racing
+duplicate tile may be computed, but only one immutable result is retained.
+
+`WorldgenPipeline.sampleTile(...)` also shares a one-block border while deriving gradients. For a
+16x16 core, point-by-point sampling would run one full climate/hydrology lookup plus four separate
+post-river height lookups for each of 256 columns (1280 hydrology-bearing lookups). Bulk sampling
+evaluates an 18x18 cell field once (324 lookups) and derives all 256 slopes from that field.
+

@@ -200,3 +200,12 @@ that accumulated flow upstream can still cross dry regions.
 Default drainage spacing is wider, visible/headwater thresholds are higher, and each Rivermap now
 uses 16 padding cells instead of 10. The result is fewer small watercourses and substantially more
 shared catchment context across neighboring map boundaries.
+
+## Shared world sample cache (r19)
+
+r19 adds a world-scoped cache above the complete pipeline. Final `TerrainSample` values are built
+in immutable 16x16 tiles and reused across biome routing, density shaping, height sampling and
+surface correction. The cache is bounded to 256 tiles, uses access-order eviction and never performs
+expensive generation while holding the cache lock. Bulk tile generation shares the gradient border,
+reducing the hydrology work required for a complete 16x16 tile from 1280 point-style lookups to 324.
+

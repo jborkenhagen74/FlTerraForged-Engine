@@ -176,7 +176,65 @@ public final class WorldgenPipeline implements CellLookup {
      * @return completed terrain sample
      */
     public TerrainSample sample(int x, int z) {
-        Cell center = sampleCell(x, z);
+        return toTerrainSample(sampleCell(x, z));
+    }
+
+    /**
+     * Generates one square tile of final samples while sharing the one-block gradient border.
+     *
+     * <p>A normal point sample needs four additional post-river height lookups to derive its local
+     * gradient. Bulk generation instead evaluates a single one-block border around the tile and
+     * reuses those completed cells for every interior gradient. For a 16x16 tile this reduces the
+     * hydrology-bearing lookups used by slope calculation from 1280 to 324 before cache reuse is
+     * considered.</p>
+     *
+     * @param originX minimum world X coordinate of the tile
+     * @param originZ minimum world Z coordinate of the tile
+     * @param size tile width and depth in blocks
+     * @return row-major immutable sample values represented by a new array
+     */
+    public TerrainSample[] sampleTile(int originX, int originZ, int size) {
+        if (size < 1) {
+            throw new IllegalArgumentException("size must be >= 1");
+        }
+        int stride = size + 2;
+        Cell[] cells = new Cell[stride * stride];
+        for (int dz = -1; dz <= size; dz++) {
+            for (int dx = -1; dx <= size; dx++) {
+                Cell cell = new Cell();
+                climate.lookup(originX + dx, originZ + dz, cell);
+                cells[(dz + 1) * stride + (dx + 1)] = cell;
+            }
+        }
+
+        TerrainSample[] samples = new TerrainSample[size * size];
+        for (int localZ = 0; localZ < size; localZ++) {
+            for (int localX = 0; localX < size; localX++) {
+                int centerIndex = (localZ + 1) * stride + localX + 1;
+                Cell center = cells[centerIndex];
+                double west = cells[centerIndex - 1].height;
+                double east = cells[centerIndex + 1].height;
+                double north = cells[centerIndex - stride].height;
+                double south = cells[centerIndex + stride].height;
+                center.gradient = Math.hypot((east - west) * 0.5D, (south - north) * 0.5D);
+                samples[localZ * size + localX] = toTerrainSample(center);
+            }
+        }
+        return samples;
+    }
+
+    /**
+     * Samples only the final post-river surface height without running climate.
+     *
+     * @param x world X coordinate
+     * @param z world Z coordinate
+     * @return final continuous surface height
+     */
+    public double surfaceHeight(int x, int z) {
+        return terrain.surfaceHeight(x, z);
+    }
+
+    private TerrainSample toTerrainSample(Cell center) {
         double continentalness = center.continentEdge * 2.0D - 1.0D;
         ClimateSample climateSample = new ClimateSample(center.temperature, center.moisture);
         RiverSample riverSample = new RiverSample(
@@ -201,17 +259,6 @@ public final class WorldgenPipeline implements CellLookup {
                 type,
                 climateSample,
                 riverSample);
-    }
-
-    /**
-     * Samples only the final post-river surface height without running climate.
-     *
-     * @param x world X coordinate
-     * @param z world Z coordinate
-     * @return final continuous surface height
-     */
-    public double surfaceHeight(int x, int z) {
-        return terrain.surfaceHeight(x, z);
     }
 
     /**

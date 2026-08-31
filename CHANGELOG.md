@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.0-SNAPSHOT-r19
+
+- Add a world-scoped overarching final-sample cache above the complete pipeline so biome, density, height and surface consumers reuse the same immutable `TerrainSample` values.
+- Cache immutable 16x16 sample tiles in a bounded 256-tile access-ordered LRU; expensive tile generation happens outside the cache lock and concurrent duplicate generation is resolved only during short insertion locks.
+- Add bulk pipeline tile sampling with a shared one-block gradient border. A 16x16 tile now needs 324 hydrology-bearing cell lookups for center heights/slopes instead of 1280 point-sampling lookups, a 74.7% reduction before cross-stage cache hits.
+- Clear final-sample tiles when the world-scoped `TerrainWorld` closes.
+- Preserve r18 climate-weighted runoff, expanded hydrology padding and river/lake geometry unchanged.
+- Report provider version `0.1.0-SNAPSHOT-r19`.
+
 ## 0.1.0-SNAPSHOT-r18
 
 - Weight drainage accumulation by pre-river climate runoff: humid catchments contribute strongly, while hot/dry catchments contribute only a small fraction. Major rivers can still cross deserts when their upstream catchment is wet.

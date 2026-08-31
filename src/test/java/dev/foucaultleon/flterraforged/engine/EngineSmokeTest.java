@@ -2,6 +2,7 @@ package dev.foucaultleon.flterraforged.engine;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.foucaultleon.flterraforged.engine.api.EngineCapability;
@@ -54,6 +55,16 @@ public final class EngineSmokeTest {
                         () -> "Missing capability: " + capability
                 );
             }
+        }
+    }
+
+    @Test
+    void repeatedWorldSamplesReuseImmutableCachedValue() {
+        try (TerrainEngine engine = new DefaultEngineProvider().create(EngineConfig.empty());
+             TerrainWorld world = engine.openWorld(new EngineContext(12345L, -64, 320, 63))) {
+            TerrainSample first = world.sample(34, -19);
+            TerrainSample second = world.sample(34, -19);
+            assertSame(first, second, "Repeated final samples should come from the shared world cache");
         }
     }
 

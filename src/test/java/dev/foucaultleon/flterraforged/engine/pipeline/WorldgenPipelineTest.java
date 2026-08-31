@@ -18,6 +18,24 @@ import org.junit.jupiter.api.Test;
 final class WorldgenPipelineTest {
 
     @Test
+    void bulkTileMatchesPointSampling() {
+        EngineContext context = new EngineContext(445566L, -64, 320, 63);
+        WorldgenPipeline pipeline = new WorldgenPipeline(context, EngineSettings.defaults());
+        int originX = 32;
+        int originZ = -48;
+        int size = 4;
+        TerrainSample[] tile = pipeline.sampleTile(originX, originZ, size);
+        for (int z = 0; z < size; z++) {
+            for (int x = 0; x < size; x++) {
+                assertEquals(
+                        pipeline.sample(originX + x, originZ + z),
+                        tile[z * size + x],
+                        "Bulk sample differs at " + x + "," + z);
+            }
+        }
+    }
+
+    @Test
     void completePipelineProducesCoherentStageSignals() {
         WorldgenPipeline pipeline = pipeline(123456789L, EnginePreset.BALANCED);
         Cell cell = pipeline.sampleCell(1320, -2440);
