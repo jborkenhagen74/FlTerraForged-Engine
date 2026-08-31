@@ -1,5 +1,10 @@
 # FlTerraForged Engine
 
+## r24: Central-Europe and climate-layout support
+
+The Engine now keeps terrain character and macro-climate arrangement independent. `preset=central_europe` increases rolling-hill/valley variety with explicit terrain-region weights and still defaults to `climateLayout=randomized`. `climateLayout=north_south` is an optional latitude-like overlay with configurable Z center/span and north/south temperature/moisture anchors. Warped Voronoi continents, coasts and ocean bands remain active for every preset. See `CLIMATE-LAYOUTS.md`.
+
+
 Default external terrain-engine implementation for FlTerraForged.
 
 The engine is deliberately independent of Minecraft, Fabric, NeoForge,
@@ -104,7 +109,7 @@ dev.foucaultleon:flterraforged-engine:0.1.0-SNAPSHOT
 
 ## Current implementation
 
-`0.1.0-SNAPSHOT-r14` combines the seven migrated foundations into one coordinated pipeline:
+`0.1.0-SNAPSHOT-r24` combines the migrated foundations into one coordinated pipeline and adds configurable terrain-region weights plus randomized/north-south macro-climate layouts:
 
 1. **Noise** — seed-aware modular scalar fields, interpolation, gradient/value
    sources, octave composition, arithmetic modules, curve/distance functions and

@@ -12,6 +12,10 @@ import java.util.Objects;
 public final class DefaultTerrainProvider implements TerrainProvider {
 
     private final List<Terrain> palette;
+    private final double plainsEnd;
+    private final double hillsEnd;
+    private final double valleyEnd;
+    private final double plateauEnd;
 
     /**
      * Creates the default landform palette.
@@ -21,13 +25,23 @@ public final class DefaultTerrainProvider implements TerrainProvider {
      * @param detail fine terrain detail field
      * @param relief base relief in blocks
      * @param mountainRelief mountain relief in blocks
+     * @param plainsWeight relative plains-region weight
+     * @param hillsWeight relative hills-region weight
+     * @param valleyWeight relative valley-region weight
+     * @param plateauWeight relative plateau-region weight
+     * @param mountainWeight relative mountain-region weight
      */
     public DefaultTerrainProvider(
             Noise2D rolling,
             Noise2D ridges,
             Noise2D detail,
             double relief,
-            double mountainRelief) {
+            double mountainRelief,
+            double plainsWeight,
+            double hillsWeight,
+            double valleyWeight,
+            double plateauWeight,
+            double mountainWeight) {
         Objects.requireNonNull(rolling, "rolling");
         Objects.requireNonNull(ridges, "ridges");
         Objects.requireNonNull(detail, "detail");
@@ -35,6 +49,16 @@ public final class DefaultTerrainProvider implements TerrainProvider {
                 || !Double.isFinite(mountainRelief) || mountainRelief <= 0.0D) {
             throw new IllegalArgumentException("terrain relief values must be finite and > 0");
         }
+        double totalWeight = plainsWeight + hillsWeight + valleyWeight + plateauWeight + mountainWeight;
+        if (!Double.isFinite(totalWeight) || totalWeight <= 0.0D
+                || plainsWeight < 0.0D || hillsWeight < 0.0D || valleyWeight < 0.0D
+                || plateauWeight < 0.0D || mountainWeight < 0.0D) {
+            throw new IllegalArgumentException("terrain weights must be finite, non-negative and not all zero");
+        }
+        this.plainsEnd = plainsWeight / totalWeight;
+        this.hillsEnd = plainsEnd + hillsWeight / totalWeight;
+        this.valleyEnd = hillsEnd + valleyWeight / totalWeight;
+        this.plateauEnd = valleyEnd + plateauWeight / totalWeight;
         this.palette = List.of(
                 new ConfiguredTerrain(
                         StandardTerrainTypes.PLAINS,
@@ -89,16 +113,16 @@ public final class DefaultTerrainProvider implements TerrainProvider {
         if (!Double.isFinite(selector) || selector < 0.0D || selector > 1.0D) {
             throw new IllegalArgumentException("selector must be finite and in [0, 1]");
         }
-        if (selector < 0.24D) {
+        if (selector < plainsEnd) {
             return palette.get(0);
         }
-        if (selector < 0.47D) {
+        if (selector < hillsEnd) {
             return palette.get(1);
         }
-        if (selector < 0.63D) {
+        if (selector < valleyEnd) {
             return palette.get(3);
         }
-        if (selector < 0.80D) {
+        if (selector < plateauEnd) {
             return palette.get(2);
         }
         return palette.get(4);

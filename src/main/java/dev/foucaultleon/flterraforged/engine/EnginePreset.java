@@ -2,12 +2,7 @@ package dev.foucaultleon.flterraforged.engine;
 
 import java.util.Locale;
 
-/**
- * Built-in tuning profiles for the complete world-generation pipeline.
- *
- * <p>Presets only select engine-internal defaults. Every numeric value can still be overridden
- * through {@code EngineConfig} after the preset has been selected.</p>
- */
+/** Built-in tuning profiles for the complete world-generation pipeline. */
 public enum EnginePreset {
 
     /** Balanced default with broad continents, varied relief and moderate physical shaping. */
@@ -17,7 +12,13 @@ public enum EnginePreset {
     GENTLE,
 
     /** Stronger relief, tighter landform transitions, denser rivers and more active erosion. */
-    RUGGED;
+    RUGGED,
+
+    /**
+     * Temperate European-style landscape with rolling relief, stronger regional variety and a
+     * configurable cool-north to warm-south climate gradient.
+     */
+    CENTRAL_EUROPE;
 
     /**
      * Parses a case-insensitive preset name.
@@ -34,7 +35,8 @@ public enum EnginePreset {
             return valueOf(value.trim().toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException exception) {
             throw new IllegalArgumentException(
-                    "Unknown engine preset '" + value + "'. Expected balanced, gentle or rugged.",
+                    "Unknown engine preset '" + value
+                            + "'. Expected balanced, gentle, rugged or central_europe.",
                     exception);
         }
     }

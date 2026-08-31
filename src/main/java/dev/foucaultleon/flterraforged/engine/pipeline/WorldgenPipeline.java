@@ -84,7 +84,12 @@ public final class WorldgenPipeline implements CellLookup {
                 ridgeNoise,
                 detailNoise,
                 settings.relief(),
-                settings.mountainRelief());
+                settings.mountainRelief(),
+                settings.terrainPlainsWeight(),
+                settings.terrainHillsWeight(),
+                settings.terrainValleyWeight(),
+                settings.terrainPlateauWeight(),
+                settings.terrainMountainWeight());
         TerrainPopulator baseTerrain = new TerrainPopulator(
                 context,
                 continent,

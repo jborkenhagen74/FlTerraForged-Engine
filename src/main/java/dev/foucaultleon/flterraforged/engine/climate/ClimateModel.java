@@ -11,8 +11,8 @@ import java.util.Objects;
 /**
  * Minecraft-neutral climate stage combining broad noise, macro regions and terrain feedback.
  *
- * <p>The model writes continuous climate signals and semantic region hints into the shared
- * {@link Cell}. It deliberately does not choose biomes.</p>
+ * <p>The model can either arrange macro climate randomly or bias it along the world's north-south
+ * axis. Both layouts retain seeded local variation and continuous region blending.</p>
  */
 public final class ClimateModel implements CellLookup {
 
@@ -55,17 +55,43 @@ public final class ClimateModel implements CellLookup {
         terrain.lookup(x, z, target);
         ClimateRegionSample region = regions.sample(x, z);
 
-        double broadTemperature = Maths.map01(temperatureNoise.sample(
-                x * settings.scale(), z * settings.scale()));
-        double broadMoisture = Maths.map01(moistureNoise.sample(
-                x * settings.scale(), z * settings.scale()));
+        double contrast = settings.regionalContrast();
+        double broadTemperature = contrast(Maths.map01(temperatureNoise.sample(
+                x * settings.scale(), z * settings.scale())), contrast);
+        double broadMoisture = contrast(Maths.map01(moistureNoise.sample(
+                x * settings.scale(), z * settings.scale())), contrast);
 
-        double boundary = 1.0D - Maths.smooth(Maths.clamp(region.edge() / settings.regionBlend(), 0.0D, 1.0D));
-        double regionalTemperature = Maths.lerp(region.temperature(), region.neighborTemperature(), boundary * 0.5D);
-        double regionalMoisture = Maths.lerp(region.moisture(), region.neighborMoisture(), boundary * 0.5D);
+        double ownerTemperature = contrast(region.temperature(), contrast);
+        double neighborTemperature = contrast(region.neighborTemperature(), contrast);
+        double ownerMoisture = contrast(region.moisture(), contrast);
+        double neighborMoisture = contrast(region.neighborMoisture(), contrast);
+
+        double boundary = 1.0D - Maths.smooth(
+                Maths.clamp(region.edge() / settings.regionBlend(), 0.0D, 1.0D));
+        double regionalTemperature = Maths.lerp(
+                ownerTemperature, neighborTemperature, boundary * 0.5D);
+        double regionalMoisture = Maths.lerp(
+                ownerMoisture, neighborMoisture, boundary * 0.5D);
 
         double temperature = broadTemperature * 0.62D + regionalTemperature * 0.38D;
         double moisture = broadMoisture * 0.58D + regionalMoisture * 0.42D;
+
+        if (settings.layout() == ClimateLayout.NORTH_SOUTH) {
+            double progress = Maths.clamp(
+                    0.5D + (z - settings.northSouthCenterZ()) / settings.northSouthSpan(),
+                    0.0D,
+                    1.0D);
+            double latitudeTemperature = Maths.lerp(
+                    settings.northTemperature(), settings.southTemperature(), progress);
+            double latitudeMoisture = Maths.lerp(
+                    settings.northMoisture(), settings.southMoisture(), progress);
+            // Temperate Europe is typically wetter around the middle latitudes than at the
+            // Mediterranean end. Keep this broad bump deterministic and independent of Minecraft.
+            double centralWetness = (1.0D - Math.abs(progress * 2.0D - 1.0D)) * 0.10D;
+            latitudeMoisture = Maths.clamp(latitudeMoisture + centralWetness, 0.0D, 1.0D);
+            temperature = Maths.lerp(temperature, latitudeTemperature, settings.northSouthStrength());
+            moisture = Maths.lerp(moisture, latitudeMoisture, settings.northSouthStrength());
+        }
 
         double altitude = Math.max(0.0D, target.height - world.seaLevel());
         temperature -= (altitude / 256.0D) * settings.altitudeCooling();
@@ -105,6 +131,10 @@ public final class ClimateModel implements CellLookup {
     public ClimateSample sample(int x, int z) {
         Cell cell = lookup(x, z);
         return new ClimateSample(cell.temperature, cell.moisture);
+    }
+
+    private static double contrast(double value, double strength) {
+        return Maths.clamp(0.5D + (value - 0.5D) * strength, 0.0D, 1.0D);
     }
 
     private static double macroBiomeId(double temperature, double moisture) {

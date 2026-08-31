@@ -1,3 +1,12 @@
+## 0.1.0-SNAPSHOT-r24
+
+- Add the `central_europe` Engine preset with shorter terrain-region cadence and explicit terrain-region weights favouring hills and valleys over mountains.
+- Add configurable `randomized` and `north_south` climate layouts. The Central Europe preset defaults to randomized; north-south is an independent option.
+- Add configurable north/south climate anchors, span, center and blend strength without introducing any Minecraft dependency into the Engine.
+- Make terrain-region selection weights configurable (`terrainPlainsWeight`, `terrainHillsWeight`, `terrainValleyWeight`, `terrainPlateauWeight`, `terrainMountainWeight`).
+- Preserve warped Voronoi continent/ocean generation for all presets, including Central Europe.
+- Report provider version `0.1.0-SNAPSHOT-r24`.
+
 ## 0.1.0-SNAPSHOT-r23
 
 - Fix engine compilation against the already-published 0.1 Engine API.

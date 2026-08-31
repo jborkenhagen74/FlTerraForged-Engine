@@ -99,10 +99,19 @@ final class ClimateFoundationTest {
                 0.00025D,
                 0.85D,
                 0.34D,
+                0.80D,
                 0.18D,
                 0.55D,
                 0.22D,
-                0.55D);
+                0.55D,
+                ClimateLayout.RANDOMIZED,
+                0.0D,
+                24000.0D,
+                0.78D,
+                0.18D,
+                0.80D,
+                0.60D,
+                0.36D);
         ClimateRegionSampler regions = new ClimateRegionSampler(seed ^ 0x1234ABCDL, settings.regionScale(), settings.regionJitter());
         return new ClimateModel(context, terrain, temperature, moisture, regions, settings);
     }

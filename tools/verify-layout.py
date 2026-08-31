@@ -96,6 +96,19 @@ for token, label in (("sampleBlend", "multi-region terrain sampling"), ("NEIGHBO
 if "TerrainRegionBlendSample" not in terrain_blender:
     errors.append("Blender missing multi-region terrain composite support")
 
+climate_layout = root / "src/main/java/dev/foucaultleon/flterraforged/engine/climate/ClimateLayout.java"
+engine_settings = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/EngineSettings.java").read_text(encoding="utf-8")
+climate_model = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/climate/ClimateModel.java").read_text(encoding="utf-8")
+if not climate_layout.is_file():
+    errors.append("missing ClimateLayout strategy enum")
+for token in ("ClimateLayout.RANDOMIZED", 'ClimateLayout.parse(config.getOrDefault("climateLayout"', "case CENTRAL_EUROPE"):
+    if token not in engine_settings:
+        errors.append(f"EngineSettings missing configurable climate/preset support: {token}")
+if "settings.layout() == ClimateLayout.NORTH_SOUTH" not in climate_model:
+    errors.append("ClimateModel must apply north-south climate only when explicitly selected")
+if "double broadTemperature = contrast(" not in climate_model or "double broadMoisture = contrast(" not in climate_model:
+    errors.append("ClimateModel must apply preset climate contrast to broad randomized fields")
+
 if errors:
     print("\n".join(errors), file=sys.stderr)
     raise SystemExit(1)

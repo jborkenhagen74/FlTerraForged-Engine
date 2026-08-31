@@ -56,7 +56,9 @@ final class TerrainFoundationTest {
         Noise2D rolling = (x, z) -> Math.sin(x * 0.01D) * Math.cos(z * 0.01D);
         Noise2D ridges = (x, z) -> Math.sin(x * 0.02D + z * 0.01D);
         Noise2D detail = (x, z) -> Math.sin(x * 0.08D) * 0.25D;
-        TerrainProvider provider = new DefaultTerrainProvider(rolling, ridges, detail, 36.0D, 52.0D);
+        TerrainProvider provider = new DefaultTerrainProvider(
+                rolling, ridges, detail, 36.0D, 52.0D,
+                0.24D, 0.23D, 0.16D, 0.17D, 0.20D);
         assertEquals(StandardTerrainTypes.PLAINS, provider.resolve(0.1D).type());
         assertEquals(StandardTerrainTypes.HILLS, provider.resolve(0.3D).type());
         assertEquals(StandardTerrainTypes.VALLEY, provider.resolve(0.55D).type());
