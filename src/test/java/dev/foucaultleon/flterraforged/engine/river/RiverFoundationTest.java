@@ -53,23 +53,20 @@ final class RiverFoundationTest {
 
 
     @Test
-    void segmentWaterSurfaceDescendsContinuouslyWithDrainageDirection() {
+    void segmentWaterSurfaceNeverRisesAndStaysBelowRefinedTerrain() {
         RiverSegment segment = model(314159L).map(0, 0).segments().stream()
                 .filter(candidate -> candidate.startWaterHeight() > candidate.endWaterHeight())
                 .findFirst()
                 .orElseThrow();
 
-        RiverHit start = segment.hit(segment.startX(), segment.startZ());
-        RiverPathPoint center = segment.path().get(segment.path().size() / 2);
-        RiverHit middle = segment.hit(center.x(), center.z());
-        RiverHit end = segment.hit(segment.endX(), segment.endZ());
-
-        assertTrue(start.waterSurfaceHeight() > middle.waterSurfaceHeight());
-        assertTrue(middle.waterSurfaceHeight() > end.waterSurfaceHeight());
-        assertEquals(
-                (start.waterSurfaceHeight() + end.waterSurfaceHeight()) * 0.5D,
-                middle.waterSurfaceHeight(),
-                1.0E-9D);
+        double previousWater = Double.POSITIVE_INFINITY;
+        for (RiverPathPoint point : segment.path()) {
+            assertTrue(point.waterSurfaceHeight() <= previousWater + 1.0E-9D);
+            assertTrue(point.waterSurfaceHeight() < point.terrainHeight());
+            RiverHit hit = segment.hit(point.x(), point.z());
+            assertEquals(point.waterSurfaceHeight(), hit.waterSurfaceHeight(), 1.0E-9D);
+            previousWater = point.waterSurfaceHeight();
+        }
     }
 
     @Test

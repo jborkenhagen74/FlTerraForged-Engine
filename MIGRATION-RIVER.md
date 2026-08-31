@@ -142,3 +142,10 @@ The default drainage spacing is wider and visible-flow thresholds are higher, re
 of small streams. Hydrology padding grows from 10 to 16 cells so region-edge nodes see substantially
 more of the same upstream catchment. That additional shared context reduces false headwater resets
 and visible channel cutoffs at Rivermap boundaries without changing the stable Engine API.
+## r21: bank-contained local water profile
+
+The visible path now stores the eroded terrain height and local water surface for every refined
+path point. The generator probes both banks outside the channel and clamps water below the lower
+bank by `bankFreeboard`, then enforces a non-rising profile downstream. Integrations should keep
+using the stable `RiverSample.waterSurfaceHeight()` API; no host API change is required.
+

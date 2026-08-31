@@ -90,8 +90,14 @@ public record RiverSegment(
         double bankAlpha = Maths.clamp((normalized - 0.28D) / 0.72D, 0.0D, 1.0D);
         double channel = 1.0D - Maths.smooth(bankAlpha);
         double bedDepth = depth * channel;
-        double surfaceHeight = Maths.lerp(startHeight, endHeight, projection.alpha());
-        double waterSurfaceHeight = Maths.lerp(startWaterHeight, endWaterHeight, projection.alpha());
+        RiverPathPoint pathStart = path.get(projection.segmentIndex());
+        RiverPathPoint pathEnd = path.get(projection.segmentIndex() + 1);
+        double surfaceHeight = Maths.lerp(
+                pathStart.terrainHeight(), pathEnd.terrainHeight(), projection.localAlpha());
+        double waterSurfaceHeight = Maths.lerp(
+                pathStart.waterSurfaceHeight(),
+                pathEnd.waterSurfaceHeight(),
+                projection.localAlpha());
         return new RiverHit(
                 projection.distance(),
                 width,
@@ -103,7 +109,7 @@ public record RiverSegment(
     }
 
     private Projection projection(double x, double z) {
-        Projection nearest = new Projection(0.0D, Double.POSITIVE_INFINITY);
+        Projection nearest = new Projection(0, 0.0D, Double.POSITIVE_INFINITY);
         int segments = path.size() - 1;
         for (int index = 0; index < segments; index++) {
             RiverPathPoint start = path.get(index);
@@ -124,13 +130,15 @@ public record RiverSegment(
             double closestZ = start.z() + dz * localAlpha;
             double distance = Math.hypot(x - closestX, z - closestZ);
             if (distance < nearest.distance()) {
-                double globalAlpha = (index + localAlpha) / segments;
-                nearest = new Projection(globalAlpha, distance);
+                nearest = new Projection(index, localAlpha, distance);
             }
         }
         return nearest;
     }
 
-    private record Projection(double alpha, double distance) {
+    private record Projection(
+            int segmentIndex,
+            double localAlpha,
+            double distance) {
     }
 }

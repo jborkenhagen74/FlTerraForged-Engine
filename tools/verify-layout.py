@@ -48,6 +48,7 @@ engine = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/DefaultTer
 for token, label in (
         ("startWaterHeight", "directed water-surface endpoints"),
         ("List<RiverPathPoint>", "terrain-refined visible path"),
+        ("waterSurfaceHeight()", "path-local contained water profile"),
         ("bankAlpha", "stable wet-core channel profile"),
 ):
     if token not in river_segment:
@@ -55,6 +56,8 @@ for token, label in (
 for token, label in (
         ("fillDepressions", "priority-flood depression resolution"),
         ("refineVisiblePath", "terrain-guided centerline refinement"),
+        ("containmentCeiling", "cross-bank water containment"),
+        ("bankProbe", "local river-bank probing"),
         ("LakeField", "pond/lake construction"),
         ("accumulateFlow", "acyclic flow accumulation"),
         ("localRunoff", "climate-weighted runoff"),

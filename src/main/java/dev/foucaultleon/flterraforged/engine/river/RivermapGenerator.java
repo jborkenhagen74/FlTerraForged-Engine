@@ -168,7 +168,12 @@ public final class RivermapGenerator {
                         endX,
                         endZ,
                         heights[index],
-                        heights[next]);
+                        heights[next],
+                        startWater,
+                        endWater,
+                        width);
+                startWater = path.get(0).waterSurfaceHeight();
+                endWater = path.get(path.size() - 1).waterSurfaceHeight();
 
                 segments.add(new RiverSegment(
                         startX,
@@ -368,7 +373,10 @@ public final class RivermapGenerator {
             int endX,
             int endZ,
             double startHeight,
-            double endHeight) {
+            double endHeight,
+            double startWaterHeight,
+            double endWaterHeight,
+            double width) {
         int samples = settings.pathSamples();
         double dx = endX - startX;
         double dz = endZ - startZ;
@@ -416,15 +424,74 @@ public final class RivermapGenerator {
             smoothOffsets[index] = (offsets[index - 1] + offsets[index] * 2.0D + offsets[index + 1]) * 0.25D;
         }
 
-        List<RiverPathPoint> path = new ArrayList<>(samples);
+        double[] pathX = new double[samples];
+        double[] pathZ = new double[samples];
         for (int index = 0; index < samples; index++) {
             double alpha = index / (double) (samples - 1);
             double offset = smoothOffsets[index];
+            pathX[index] = Maths.lerp(startX, endX, alpha) + perpendicularX * offset;
+            pathZ[index] = Maths.lerp(startZ, endZ, alpha) + perpendicularZ * offset;
+        }
+
+        double[] terrainHeight = new double[samples];
+        double[] waterHeight = new double[samples];
+        double bankProbe = Math.max(2.5D, width * 0.62D + 1.0D);
+        double previousWater = Double.POSITIVE_INFINITY;
+        Cell center = new Cell();
+        Cell leftBank = new Cell();
+        Cell rightBank = new Cell();
+        for (int index = 0; index < samples; index++) {
+            double tangentX;
+            double tangentZ;
+            if (index == 0) {
+                tangentX = pathX[1] - pathX[0];
+                tangentZ = pathZ[1] - pathZ[0];
+            } else if (index == samples - 1) {
+                tangentX = pathX[index] - pathX[index - 1];
+                tangentZ = pathZ[index] - pathZ[index - 1];
+            } else {
+                tangentX = pathX[index + 1] - pathX[index - 1];
+                tangentZ = pathZ[index + 1] - pathZ[index - 1];
+            }
+            double tangentLength = Math.max(1.0D, Math.hypot(tangentX, tangentZ));
+            double localPerpendicularX = -tangentZ / tangentLength;
+            double localPerpendicularZ = tangentX / tangentLength;
+
+            lookupTerrain(pathX[index], pathZ[index], center);
+            lookupTerrain(
+                    pathX[index] + localPerpendicularX * bankProbe,
+                    pathZ[index] + localPerpendicularZ * bankProbe,
+                    leftBank);
+            lookupTerrain(
+                    pathX[index] - localPerpendicularX * bankProbe,
+                    pathZ[index] - localPerpendicularZ * bankProbe,
+                    rightBank);
+
+            terrainHeight[index] = center.heightErosion;
+            double alpha = index / (double) (samples - 1);
+            double desiredWater = Maths.lerp(startWaterHeight, endWaterHeight, alpha);
+            double containmentCeiling = Math.min(
+                    center.heightErosion,
+                    Math.min(leftBank.heightErosion, rightBank.heightErosion))
+                    - settings.bankFreeboard();
+            double containedWater = Math.min(desiredWater, containmentCeiling);
+            waterHeight[index] = Math.min(previousWater, containedWater);
+            previousWater = waterHeight[index];
+        }
+
+        List<RiverPathPoint> path = new ArrayList<>(samples);
+        for (int index = 0; index < samples; index++) {
             path.add(new RiverPathPoint(
-                    Maths.lerp(startX, endX, alpha) + perpendicularX * offset,
-                    Maths.lerp(startZ, endZ, alpha) + perpendicularZ * offset));
+                    pathX[index],
+                    pathZ[index],
+                    terrainHeight[index],
+                    waterHeight[index]));
         }
         return List.copyOf(path);
+    }
+
+    private void lookupTerrain(double x, double z, Cell target) {
+        terrain.lookup((int) Math.round(x), (int) Math.round(z), target);
     }
 
     private double deterministicUnit(long salt, int x, int z, int extra) {

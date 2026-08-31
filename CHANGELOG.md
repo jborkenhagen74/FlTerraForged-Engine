@@ -1,3 +1,11 @@
+## 0.1.0-SNAPSHOT-r21
+
+- River water profiles are now resolved along the refined path instead of being linearly projected only between coarse drainage nodes.
+- Each refined path point samples both banks and clamps the local water surface below the lower bank while preserving downstream monotonicity.
+- Mountain rivers therefore lower their local water level or become temporarily dry where a channel cannot be contained, instead of spilling across a descending slope.
+- `RiverPathPoint` now carries the pre-river terrain height and the bank-contained local water surface used by `RiverSegment.hit`.
+- Strict compile/Javadoc verification remains unchanged.
+
 ## 0.1.0-SNAPSHOT-r20
 
 - Replaced the two-region terrain boundary blend with a continuous four-influence Voronoi blender.

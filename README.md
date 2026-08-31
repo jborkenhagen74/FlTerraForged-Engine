@@ -221,3 +221,13 @@ triple junction. The balanced preset uses a 0.50 blend width, gentle 0.60 and ru
 The more expensive neighborhood scan only runs inside the configured boundary band. Region
 interiors still resolve directly to their owning terrain, preserving the r19 cache-oriented hot
 path as much as possible.
+## Bank-contained river profiles (r21)
+
+r21 keeps the r18 drainage topology and r20 terrain blending, but changes how visible river water
+levels are resolved through steep terrain. Every refined centerline point samples the local terrain
+and both banks just outside the channel width. The water surface is clamped below the lowest of
+those three terrain samples by the configured `bankFreeboard` and is then forced to remain
+non-rising downstream. This prevents a coarse drainage-node water level from projecting across a
+mountain side and flooding terrain outside the intended channel. If a steep section cannot contain
+a wet channel within the maximum incision depth, it is allowed to remain dry rather than overflow.
+
