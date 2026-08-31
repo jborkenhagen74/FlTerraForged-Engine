@@ -250,7 +250,8 @@ public final class WorldgenPipeline implements CellLookup {
                 center.gradient,
                 continentalness,
                 riverSample,
-                center.lake);
+                center.lake,
+                center.lakeShore);
         return new TerrainSample(
                 center.height,
                 center.gradient,

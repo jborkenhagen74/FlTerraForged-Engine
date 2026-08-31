@@ -94,32 +94,31 @@ public final class RiverModel implements CellLookup {
         RiverHit river = nearest(x, z);
         LakeHit lake = nearestLake(x, z);
 
-        double riverIncision = river.present() ? river.depth() : 0.0D;
         double lakeIncision = 0.0D;
         double lakeBed = target.heightErosion;
-        if (lake.present()) {
+        if (lake.materialWater()) {
             lakeBed = Math.min(target.heightErosion, lake.waterSurfaceHeight() - lake.minimumDepth());
             lakeBed = Maths.clamp(lakeBed, world.minY() + 1.0D, world.maxYExclusive() - 2.0D);
-            lakeIncision = Math.max(0.0D, target.heightErosion - lakeBed) * lake.influence();
+            lakeIncision = Math.max(0.0D, target.heightErosion - lakeBed);
         }
 
-        boolean useLake = lake.present() && (lake.influence() >= 0.42D || lakeIncision >= riverIncision);
-        if (useLake) {
+        if (lake.materialWater()) {
             target.lake = true;
+            target.lakeShore = false;
             target.riverMask = 1.0D - lake.influence();
             target.riverDistance = 0.0D;
             target.riverWidth = settings.gridSpacing() * (1.0D + lake.influence() * 5.0D);
-            target.riverDepth = lakeIncision;
+            target.riverDepth = Math.max(
+                    lake.minimumDepth(),
+                    Math.max(lakeIncision, lake.waterSurfaceHeight() - lakeBed));
             target.riverWaterSurfaceHeight = lake.waterSurfaceHeight();
             target.riverFlow = 0.0D;
-            target.height = Maths.clamp(
-                    target.heightErosion - lakeIncision,
-                    world.minY() + 1.0D,
-                    world.maxYExclusive() - 2.0D);
+            target.height = lakeBed;
             return;
         }
 
         target.lake = false;
+        target.lakeShore = lake.shore();
         if (!river.present()) {
             target.riverMask = 1.0D;
             target.riverDistance = settings.regionSize() * 2.0D;

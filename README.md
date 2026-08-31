@@ -231,3 +231,16 @@ non-rising downstream. This prevents a coarse drainage-node water level from pro
 mountain side and flooding terrain outside the intended channel. If a steep section cannot contain
 a wet channel within the maximum incision depth, it is allowed to remain dry rather than overflow.
 
+
+
+## Flat basin lakes and explicit shores (r22)
+
+r22 fixes inland-water surfaces at the hydrology source. Priority-flood nodes that belong to the
+same connected depression are grouped into one basin, and that basin stores one spill-derived water
+level. Terrain interpolation and deterministic edge noise shape only the shoreline; the water surface
+itself is never bilinearly interpolated between drainage nodes.
+
+Each basin sample is classified internally as `SHORE`, `SHALLOW` or `CORE`. Shallow/core samples
+carry material water; the dry shore is exported separately through `StandardTerrainTypes.LAKE_SHORE`.
+This prevents broad dry gravel fields from being mislabeled as lake bottoms while preserving a
+continuous geometry for future hosts with sub-block terrain resolution.

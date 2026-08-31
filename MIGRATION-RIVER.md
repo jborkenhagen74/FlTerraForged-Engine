@@ -117,9 +117,8 @@ or erosion ownership.
 
 r16 changes the role of D8: it is retained only as a deterministic drainage skeleton. Before routing,
 a priority-flood pass fills local depressions to their spill elevation. The difference between original
-and filled height drives an irregular, bilinearly sampled lake/pond field; the flood parent provides a
-valid outlet across flats so river networks no longer terminate merely because no strictly lower D8
-neighbor exists.
+and filled height identifies candidate pond/lake depressions; the flood parent provides a valid outlet
+across flats so river networks no longer terminate merely because no strictly lower D8 neighbor exists.
 
 Each emitted drainage edge is refined into a multi-point visible path. Intermediate points probe
 perpendicular candidates and prefer lower terrain while retaining deterministic meander variation.
@@ -149,3 +148,17 @@ path point. The generator probes both banks outside the channel and clamps water
 bank by `bankFreeboard`, then enforces a non-rising profile downstream. Integrations should keep
 using the stable `RiverSample.waterSurfaceHeight()` API; no host API change is required.
 
+
+
+## r22: basin-level lakes and shoreline zones
+
+Depression nodes with the same connected priority-flood spill elevation are grouped into immutable
+basins. Each basin owns one water surface (`spillElevation - freeboardOffset`) and sampling never
+interpolates that surface between grid nodes. The continuous pre-lake terrain height is instead
+compared with the basin level to derive three zones: dry `SHORE`, material `SHALLOW` water and stable
+`CORE` water. Deterministic shoreline noise perturbs only the zone boundary, not the lake level.
+
+`RiverModel` exports shallow/core water through the existing `RiverSample` carrier and marks the dry
+transition separately through `Cell.lakeShore`; final classification maps that to the additive
+`StandardTerrainTypes.LAKE_SHORE` semantic supplied by the companion Engine API. Minecraft-specific
+full-block or sub-block realization remains host-owned.

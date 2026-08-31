@@ -42,7 +42,7 @@ public final class TerrainClassifier {
             double slope,
             double continentalness,
             RiverSample river) {
-        return classify(baseType, height, seaLevel, slope, continentalness, river, false);
+        return classify(baseType, height, seaLevel, slope, continentalness, river, false, false);
     }
 
     /**
@@ -65,6 +65,31 @@ public final class TerrainClassifier {
             double continentalness,
             RiverSample river,
             boolean lake) {
+        return classify(baseType, height, seaLevel, slope, continentalness, river, lake, false);
+    }
+
+    /**
+     * Classifies a terrain position with explicit inland-water and shoreline semantics.
+     *
+     * @param baseType terrain type selected by the terrain-region pipeline
+     * @param height final surface height
+     * @param seaLevel world sea level
+     * @param slope local terrain slope
+     * @param continentalness continentalness signal
+     * @param river hydrology sample
+     * @param lake whether depression-fill hydrology marks this point as material pond/lake water
+     * @param lakeShore whether this point lies in the dry lake/pond shoreline transition
+     * @return final semantic terrain type
+     */
+    public TerrainType classify(
+            TerrainType baseType,
+            double height,
+            int seaLevel,
+            double slope,
+            double continentalness,
+            RiverSample river,
+            boolean lake,
+            boolean lakeShore) {
         Objects.requireNonNull(baseType, "baseType");
         Objects.requireNonNull(river, "river");
         if (height < seaLevel - settings.oceanDepthBelowSea()
@@ -76,6 +101,9 @@ public final class TerrainClassifier {
         }
         if (river.depth() >= settings.riverDepth()) {
             return StandardTerrainTypes.RIVER;
+        }
+        if (lakeShore) {
+            return StandardTerrainTypes.LAKE_SHORE;
         }
         if (height <= seaLevel + settings.coastHeightAboveSea()
                 || continentalness < settings.coastContinentalness()) {

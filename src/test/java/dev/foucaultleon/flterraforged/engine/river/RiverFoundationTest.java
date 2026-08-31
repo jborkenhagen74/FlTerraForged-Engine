@@ -119,7 +119,7 @@ final class RiverFoundationTest {
         boolean hasLake = false;
         for (int z = 0; z < settings().regionSize() && !hasLake; z += 8) {
             for (int x = 0; x < settings().regionSize(); x += 8) {
-                if (map.lake(x, z).present()) {
+                if (map.lake(x, z).materialWater()) {
                     hasLake = true;
                     break;
                 }
@@ -170,6 +170,37 @@ final class RiverFoundationTest {
         RiverSample after = river.sample(96, boundaryZ + 8);
         assertTrue(before.depth() > 0.0D, "river should be wet before map boundary");
         assertTrue(after.depth() > 0.0D, "river should remain wet after map boundary");
+    }
+
+    @Test
+    void depressionBasinUsesOneConstantWaterSurface() {
+        int width = 5;
+        double[] original = {
+                75, 75, 75, 75, 75,
+                75, 68, 67, 68, 75,
+                75, 67, 66, 67, 75,
+                75, 68, 67, 68, 75,
+                75, 75, 75, 75, 75
+        };
+        double[] filled = original.clone();
+        for (int z = 1; z <= 3; z++) {
+            for (int x = 1; x <= 3; x++) {
+                filled[z * width + x] = 70.0D;
+            }
+        }
+
+        LakeField field = new LakeField(
+                1234L, 0, 0, 10, width, original, filled, 0.85D, 1.35D, 63);
+        LakeHit first = field.sample(10.0D, 10.0D);
+        LakeHit center = field.sample(20.0D, 20.0D);
+        LakeHit farSide = field.sample(29.0D, 20.0D);
+
+        assertTrue(first.materialWater());
+        assertTrue(center.materialWater());
+        assertTrue(farSide.materialWater());
+        assertEquals(first.waterSurfaceHeight(), center.waterSurfaceHeight(), 1.0E-9D);
+        assertEquals(first.waterSurfaceHeight(), farSide.waterSurfaceHeight(), 1.0E-9D);
+        assertEquals(69.75D, first.waterSurfaceHeight(), 1.0E-9D);
     }
 
     @Test

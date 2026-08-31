@@ -1,17 +1,25 @@
 package dev.foucaultleon.flterraforged.engine.river;
 
 import dev.foucaultleon.flterraforged.engine.internal.Maths;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Objects;
 
 /**
- * Immutable depression-fill field used to materialize irregular ponds and lakes.
+ * Immutable basin-aware depression field used to materialize irregular ponds and lakes.
  *
- * <p>The field is sampled bilinearly from the same globally aligned hydrology grid used by the
- * drainage graph. Low-frequency deterministic edge noise only perturbs the shoreline threshold;
- * the water level itself always comes from the depression spill surface.</p>
+ * <p>Priority-flood spill elevations are first grouped into connected basins. Each basin owns one
+ * constant water level. Continuous terrain height and deterministic edge noise shape only the
+ * shoreline; they never interpolate or tilt the lake surface itself.</p>
  */
 public final class LakeField {
+
+    private static final double BASIN_EPSILON = 1.0E-6D;
+    private static final double WATER_LEVEL_OFFSET = 0.25D;
+    private static final int[] NEIGHBOR_X = {-1, 0, 1, -1, 1, -1, 0, 1};
+    private static final int[] NEIGHBOR_Z = {-1, -1, -1, 0, 0, 1, 1, 1};
 
     private final long seed;
     private final int originX;
@@ -20,6 +28,8 @@ public final class LakeField {
     private final int width;
     private final double[] originalHeight;
     private final double[] filledHeight;
+    private final int[] basinIds;
+    private final double[] basinWaterLevels;
     private final double minimumDepth;
     private final double shoreBlend;
     private final int seaLevel;
@@ -62,6 +72,9 @@ public final class LakeField {
         if (this.originalHeight.length != width * width || this.filledHeight.length != width * width) {
             throw new IllegalArgumentException("Lake-field arrays do not match grid width");
         }
+        BasinData basins = identifyBasins();
+        this.basinIds = basins.ids();
+        this.basinWaterLevels = basins.waterLevels();
     }
 
     /**
@@ -79,28 +92,150 @@ public final class LakeField {
         if (gx < 0 || gz < 0 || gx >= width - 1 || gz >= width - 1) {
             return LakeHit.NONE;
         }
+
         double tx = gridX - gx;
         double tz = gridZ - gz;
-        double original = bilinear(originalHeight, gx, gz, tx, tz);
-        double filled = bilinear(filledHeight, gx, gz, tx, tz);
-        if (filled <= seaLevel + 0.75D) {
+        int basinId = dominantBasin(gx, gz, tx, tz);
+        if (basinId < 0) {
             return LakeHit.NONE;
         }
 
-        double rawDepth = filled - original;
-        double shorelineNoise = smoothValueNoise(x * 0.035D, z * 0.035D) * 0.38D;
-        double effectiveDepth = rawDepth + shorelineNoise;
-        double influence = Maths.smooth(Maths.clamp(
-                (effectiveDepth - minimumDepth) / shoreBlend,
+        double waterSurface = basinWaterLevels[basinId];
+        if (waterSurface <= seaLevel + 0.50D) {
+            return LakeHit.NONE;
+        }
+
+        double original = bilinear(originalHeight, gx, gz, tx, tz);
+        double geometricDepth = waterSurface - original;
+        double shorelineNoise = smoothValueNoise(x * 0.035D, z * 0.035D) * Math.min(0.32D, shoreBlend * 0.24D);
+        double effectiveDepth = geometricDepth + shorelineNoise;
+        double shoreReach = Math.max(0.30D, shoreBlend * 0.45D);
+        if (effectiveDepth <= -shoreReach) {
+            return LakeHit.NONE;
+        }
+
+        if (effectiveDepth < minimumDepth) {
+            double shoreInfluence = Maths.smooth(Maths.clamp(
+                    (effectiveDepth + shoreReach) / (minimumDepth + shoreReach),
+                    0.0D,
+                    1.0D));
+            return new LakeHit(
+                    LakeZone.SHORE,
+                    shoreInfluence * 0.34D,
+                    waterSurface,
+                    0.0D);
+        }
+
+        double coreStart = minimumDepth + shoreBlend * 0.72D;
+        double waterInfluence = Maths.smooth(Maths.clamp(
+                (effectiveDepth - minimumDepth) / Math.max(0.001D, coreStart - minimumDepth),
                 0.0D,
                 1.0D));
-        if (influence <= 0.0D) {
-            return LakeHit.NONE;
+        if (effectiveDepth < coreStart) {
+            double desiredDepth = Math.max(0.30D, Math.min(1.10D, effectiveDepth * 0.72D));
+            return new LakeHit(
+                    LakeZone.SHALLOW,
+                    0.35D + waterInfluence * 0.30D,
+                    waterSurface,
+                    desiredDepth);
         }
 
-        double waterSurface = filled - 0.25D;
-        double desiredDepth = 1.15D + influence * Math.min(3.25D, Math.max(0.0D, rawDepth));
-        return new LakeHit(influence, waterSurface, desiredDepth);
+        double deepInfluence = Maths.smooth(Maths.clamp(
+                (effectiveDepth - coreStart) / Math.max(0.001D, shoreBlend * 1.35D),
+                0.0D,
+                1.0D));
+        double desiredDepth = 1.15D + deepInfluence * Math.min(3.25D, Math.max(0.0D, geometricDepth));
+        return new LakeHit(
+                LakeZone.CORE,
+                0.65D + deepInfluence * 0.35D,
+                waterSurface,
+                desiredDepth);
+    }
+
+    private BasinData identifyBasins() {
+        int[] ids = new int[originalHeight.length];
+        Arrays.fill(ids, -1);
+        List<Double> levels = new ArrayList<>();
+        ArrayDeque<Integer> queue = new ArrayDeque<>();
+
+        for (int index = 0; index < originalHeight.length; index++) {
+            if (ids[index] >= 0 || !isDepressionNode(index)) {
+                continue;
+            }
+            int basinId = levels.size();
+            double spillLevel = filledHeight[index];
+            levels.add(spillLevel - WATER_LEVEL_OFFSET);
+            ids[index] = basinId;
+            queue.add(index);
+
+            while (!queue.isEmpty()) {
+                int current = queue.removeFirst();
+                int gx = current % width;
+                int gz = current / width;
+                for (int direction = 0; direction < NEIGHBOR_X.length; direction++) {
+                    int nx = gx + NEIGHBOR_X[direction];
+                    int nz = gz + NEIGHBOR_Z[direction];
+                    if (nx < 0 || nz < 0 || nx >= width || nz >= width) {
+                        continue;
+                    }
+                    int candidate = nz * width + nx;
+                    if (ids[candidate] >= 0 || !isDepressionNode(candidate)) {
+                        continue;
+                    }
+                    if (Math.abs(filledHeight[candidate] - spillLevel) > BASIN_EPSILON) {
+                        continue;
+                    }
+                    ids[candidate] = basinId;
+                    queue.addLast(candidate);
+                }
+            }
+        }
+
+        double[] waterLevels = new double[levels.size()];
+        for (int index = 0; index < levels.size(); index++) {
+            waterLevels[index] = levels.get(index);
+        }
+        return new BasinData(ids, waterLevels);
+    }
+
+    private boolean isDepressionNode(int index) {
+        return filledHeight[index] > seaLevel + 0.75D
+                && filledHeight[index] - originalHeight[index] > BASIN_EPSILON;
+    }
+
+    private int dominantBasin(int gx, int gz, double tx, double tz) {
+        int[] candidates = {
+            basinIds[gz * width + gx],
+            basinIds[gz * width + gx + 1],
+            basinIds[(gz + 1) * width + gx],
+            basinIds[(gz + 1) * width + gx + 1]
+        };
+        double[] weights = {
+            (1.0D - tx) * (1.0D - tz),
+            tx * (1.0D - tz),
+            (1.0D - tx) * tz,
+            tx * tz
+        };
+
+        int best = -1;
+        double bestWeight = 0.0D;
+        for (int candidateIndex = 0; candidateIndex < candidates.length; candidateIndex++) {
+            int candidate = candidates[candidateIndex];
+            if (candidate < 0) {
+                continue;
+            }
+            double weight = 0.0D;
+            for (int index = 0; index < candidates.length; index++) {
+                if (candidates[index] == candidate) {
+                    weight += weights[index];
+                }
+            }
+            if (weight > bestWeight) {
+                best = candidate;
+                bestWeight = weight;
+            }
+        }
+        return best;
     }
 
     private double bilinear(double[] values, int gx, int gz, double tx, double tz) {
@@ -136,6 +271,7 @@ public final class LakeField {
         value ^= value >>> 31;
         return ((value & 0x1FFFFFL) / (double) 0x1FFFFF) * 2.0D - 1.0D;
     }
+
     /** {@inheritDoc} */
     @Override
     public boolean equals(Object other) {
@@ -167,4 +303,6 @@ public final class LakeField {
         return result;
     }
 
+    private record BasinData(int[] ids, double[] waterLevels) {
+    }
 }

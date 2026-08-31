@@ -1,3 +1,13 @@
+## 0.1.0-SNAPSHOT-r22
+
+- Replace bilinear interpolation of depression-fill spill heights with connected basin identification. Every pond/lake basin now owns one constant continuous water surface.
+- Split inland-water sampling into explicit `SHORE`, `SHALLOW` and `CORE` zones. Only shallow/core zones materialize water; the shore is a separate dry semantic transition.
+- Guarantee a stable core depth in the Engine while leaving final full-block quantization to the Minecraft host.
+- Add `Cell.lakeShore` and route it through final terrain classification as additive `StandardTerrainTypes.LAKE_SHORE` semantics supplied by the companion API snapshot.
+- Add layout guards that reject a return to `bilinear(filledHeight, ...)` water-surface interpolation and require basin-aware lake logic.
+- Preserve r21 mountain-river containment, r20 multi-region terrain blending and r19 world-sample caching unchanged.
+- Report provider version `0.1.0-SNAPSHOT-r22`.
+
 ## 0.1.0-SNAPSHOT-r21
 
 - River water profiles are now resolved along the refined path instead of being linearly projected only between coarse drainage nodes.

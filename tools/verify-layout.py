@@ -69,9 +69,15 @@ for token in ("riverWaterSurfaceHeight", "riverFlow", "minimumWaterDepth", "near
         errors.append(f"Engine hydrology pipeline missing {token}")
 if "public boolean lake" not in cell:
     errors.append("Cell is missing inland-water semantic")
-for token in ("bilinear", "smoothValueNoise", "waterSurface"):
+if "public boolean lakeShore" not in cell:
+    errors.append("Cell is missing explicit lake-shore semantic")
+for token in ("identifyBasins", "basinWaterLevels", "dominantBasin", "smoothValueNoise", "LakeZone.SHORE", "LakeZone.SHALLOW", "LakeZone.CORE"):
     if token not in lake_field:
-        errors.append(f"LakeField missing {token}")
+        errors.append(f"LakeField missing basin-aware lake logic: {token}")
+if "bilinear(filledHeight" in lake_field:
+    errors.append("LakeField must not bilinearly interpolate depression spill heights into a tilted water surface")
+if "lake.materialWater()" not in river_model or "lake.shore()" not in river_model:
+    errors.append("RiverModel must distinguish material lake water from the dry shore transition")
 if "EngineCapability.RIVER_WATER_LEVEL" not in engine:
     errors.append("Default engine does not advertise RIVER_WATER_LEVEL")
 
