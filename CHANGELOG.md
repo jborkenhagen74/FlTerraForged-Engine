@@ -1,3 +1,11 @@
+## 0.1.0-SNAPSHOT-r26
+
+- Added continuous continental-shelf and deep-ocean bathymetry so ocean basins are no longer predominantly 2-5 blocks deep.
+- Fixed terrain classification so low continentalness cannot classify above-sea terrain as ocean and low elevation alone cannot classify inland terrain as coast.
+- Increased basin-core lake depth while preserving shallow pond/shore transitions and constant spill-controlled lake levels.
+- These classification changes also prevent ocean/beach biome structure sets from leaking onto unrelated inland terrain.
+- Report provider version `0.1.0-SNAPSHOT-r26`.
+
 ## 0.1.0-SNAPSHOT-r25
 
 - Fix strict Javadoc generation for the compact constructors of `EngineSettings` and `ClimateSettings`.

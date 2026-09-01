@@ -148,6 +148,17 @@ if "StandardTerrainTypes.LAKE_SHORE" in terrain_classifier:
 if 'TerrainType.of(StandardTerrainTypes.NAMESPACE, "lake_shore")' not in terrain_classifier:
     errors.append("TerrainClassifier missing canonical flterraforged:lake_shore compatibility semantic")
 
+configured_terrain = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/terrain/ConfiguredTerrain.java").read_text(encoding="utf-8")
+for token in ("double bathymetry", "double shelf", "double deep", "- bathymetry"):
+    if token not in configured_terrain:
+        errors.append(f"ConfiguredTerrain missing ocean bathymetry guard: {token}")
+if "continentalness < settings.oceanContinentalness() && belowSea" not in terrain_classifier:
+    errors.append("TerrainClassifier must require submerged terrain for continental ocean classification")
+if "continentalness < settings.coastContinentalness()" not in terrain_classifier or "&& height <= seaLevel + settings.coastHeightAboveSea()" not in terrain_classifier:
+    errors.append("TerrainClassifier must require both shoreline proximity and low elevation for coast")
+if "targetCoreDepth" not in lake_field or "Math.min(12.0D" not in lake_field:
+    errors.append("LakeField must retain deeper basin-core lake shaping")
+
 
 terrain_sampler = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/terrain/region/TerrainRegionSampler.java").read_text(encoding="utf-8")
 terrain_blender = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/terrain/Blender.java").read_text(encoding="utf-8")

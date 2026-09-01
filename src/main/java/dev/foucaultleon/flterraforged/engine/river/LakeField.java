@@ -144,7 +144,13 @@ public final class LakeField {
                 (effectiveDepth - coreStart) / Math.max(0.001D, shoreBlend * 1.35D),
                 0.0D,
                 1.0D));
-        double desiredDepth = 1.15D + deepInfluence * Math.min(3.25D, Math.max(0.0D, geometricDepth));
+        // Core water should read as an actual lake rather than a uniformly shallow flooded
+        // depression. Preserve naturally deep basins and allow the central bowl to cut several
+        // additional blocks below the spill-controlled water level. Edge/shallow zones remain
+        // deliberately gentle.
+        double naturalDepth = Math.max(0.0D, geometricDepth);
+        double targetCoreDepth = 1.75D + deepInfluence * 7.25D;
+        double desiredDepth = Math.min(12.0D, Math.max(naturalDepth, targetCoreDepth));
         return new LakeHit(
                 LakeZone.CORE,
                 0.65D + deepInfluence * 0.35D,

@@ -102,8 +102,11 @@ public final class TerrainClassifier {
             boolean lakeShore) {
         Objects.requireNonNull(baseType, "baseType");
         Objects.requireNonNull(river, "river");
-        if (height < seaLevel - settings.oceanDepthBelowSea()
-                || continentalness < settings.oceanContinentalness()) {
+        boolean belowSea = height < seaLevel - 1.50D;
+        boolean oceanward = continentalness < settings.coastContinentalness();
+        boolean deepEnough = height < seaLevel - settings.oceanDepthBelowSea();
+        if ((deepEnough && oceanward)
+                || (continentalness < settings.oceanContinentalness() && belowSea)) {
             return StandardTerrainTypes.OCEAN;
         }
         if (lake && river.hasWaterSurfaceHeight()) {
@@ -115,8 +118,11 @@ public final class TerrainClassifier {
         if (lakeShore) {
             return LAKE_SHORE;
         }
-        if (height <= seaLevel + settings.coastHeightAboveSea()
-                || continentalness < settings.coastContinentalness()) {
+        // A low elevation alone does not make an inland plain a coast. Coastal semantics require
+        // both proximity to the continent edge and a surface near sea level. This also prevents
+        // beach biomes (and their structures) from leaking far inland.
+        if (continentalness < settings.coastContinentalness()
+                && height <= seaLevel + settings.coastHeightAboveSea()) {
             return StandardTerrainTypes.COAST;
         }
         if (baseType.equals(StandardTerrainTypes.VALLEY) && slope > settings.valleySlope()) {

@@ -71,11 +71,31 @@ public final class ConfiguredTerrain implements Terrain {
         Objects.requireNonNull(context, "context");
         double shapeValue = shape.sample(context.x(), context.z());
         double normalized = shapedSignal(shapeValue);
-        double coastMask = Maths.smooth(Maths.map01(context.continentalness() + 0.15D));
-        double landBase = context.continentalness() * relief * 0.35D;
+        double continentalness = context.continentalness();
+        double coastMask = Maths.smooth(Maths.map01(continentalness + 0.15D));
+        double landBase = continentalness * relief * 0.35D;
         double shaped = normalized * relief * coastMask;
-        double fine = detail.sample(context.x(), context.z()) * detailRelief;
-        return context.world().seaLevel() + baseOffset + landBase + shaped + fine;
+        double detailValue = detail.sample(context.x(), context.z());
+        double fine = detailValue * detailRelief;
+
+        // Continentalness describes distance from the tectonic continent edge. The original
+        // terrain formula reduced relief toward that edge but did not create a proper continental
+        // shelf or deep-ocean basin, leaving large ocean regions only a few blocks deep. Apply a
+        // continuous bathymetry term only on the oceanward half of the signal. Near-shore shelves
+        // remain gentle while strongly negative continentalness develops a substantially deeper
+        // basin with a small amount of floor variation.
+        double shelf = Maths.smooth(Maths.clamp((-continentalness - 0.05D) / 0.95D, 0.0D, 1.0D));
+        double deep = Maths.smooth(Maths.clamp((-continentalness - 0.48D) / 0.52D, 0.0D, 1.0D));
+        double bathymetry = relief * (0.18D * shelf + 0.62D * deep);
+        double floorVariation = Math.abs(detailValue) * detailRelief * 0.65D * deep;
+
+        return context.world().seaLevel()
+                + baseOffset
+                + landBase
+                + shaped
+                + fine
+                - bathymetry
+                - floorVariation;
     }
 
     /** {@inheritDoc} */
