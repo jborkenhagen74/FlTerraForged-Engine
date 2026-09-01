@@ -1,3 +1,11 @@
+## 0.1.0-SNAPSHOT-r27
+
+- Replace the previous fixed 1.35-block river-core minimum with a continuous altitude-aware depth curve. Lowland river cores target 3.5 blocks before edge tapering, mid-elevation channels transition toward 2.75 blocks, and high-alpine streams gradually approach 1.75 blocks.
+- Make lake minimum depth depend on connected basin size as well as altitude. Single-node ponds may remain shallow, while broad lowland basins target at least 3.5 blocks in their shallow body and substantially deeper cores.
+- Preserve a lake basin's water-surface elevation on dry `LAKE_SHORE` samples without marking the shore as material water, allowing host materializers to choose the correct height profile at the waterline.
+- Preserve flat spill-controlled lake surfaces, downstream-monotonic river levels, shore transitions and all r26 bathymetry/marine-classification behavior.
+- Report provider version `0.1.0-SNAPSHOT-r27`.
+
 ## 0.1.0-SNAPSHOT-r26
 
 - Added continuous continental-shelf and deep-ocean bathymetry so ocean basins are no longer predominantly 2-5 blocks deep.

@@ -119,13 +119,17 @@ public final class RiverModel implements CellLookup {
 
         target.lake = false;
         target.lakeShore = lake.shore();
-        if (!river.present()) {
+        if (!river.present() || (lake.shore() && river.depth() <= 0.05D)) {
             target.riverMask = 1.0D;
-            target.riverDistance = settings.regionSize() * 2.0D;
-            target.riverWidth = settings.minimumWidth();
+            target.riverDistance = lake.shore() ? 0.0D : settings.regionSize() * 2.0D;
+            target.riverWidth = lake.shore()
+                    ? settings.gridSpacing() * (1.0D + lake.influence() * 5.0D)
+                    : settings.minimumWidth();
             target.riverDepth = 0.0D;
-            target.riverWaterSurfaceHeight = Double.NaN;
-            target.riverFlow = Double.NaN;
+            target.riverWaterSurfaceHeight = lake.shore()
+                    ? lake.waterSurfaceHeight()
+                    : Double.NaN;
+            target.riverFlow = lake.shore() ? 0.0D : Double.NaN;
             target.height = target.heightErosion;
             return;
         }
@@ -133,7 +137,7 @@ public final class RiverModel implements CellLookup {
         double halfWidth = Math.max(0.5D, river.width() * 0.5D);
         double normalizedDistance = Maths.clamp(river.distance() / halfWidth, 0.0D, 1.0D);
         double wetCore = 1.0D - Maths.smooth(Maths.clamp((normalizedDistance - 0.18D) / 0.70D, 0.0D, 1.0D));
-        double desiredWaterDepth = settings.minimumWaterDepth() * wetCore;
+        double desiredWaterDepth = minimumWaterDepth(river.waterSurfaceHeight()) * wetCore;
         double requiredIncision = river.depth();
         if (desiredWaterDepth > 0.05D && Double.isFinite(river.waterSurfaceHeight())) {
             requiredIncision = Math.max(
@@ -154,6 +158,32 @@ public final class RiverModel implements CellLookup {
                 target.heightErosion - localIncision,
                 world.minY() + 1.0D,
                 world.maxYExclusive() - 2.0D);
+    }
+
+    private double minimumWaterDepth(double waterSurfaceHeight) {
+        if (!Double.isFinite(waterSurfaceHeight)) {
+            return settings.minimumWaterDepth();
+        }
+
+        double altitude = waterSurfaceHeight;
+        double target;
+        if (altitude <= world.seaLevel() + 1.0D) {
+            target = 3.50D;
+        } else if (altitude <= 90.0D) {
+            double alpha = Maths.smooth(Maths.clamp(
+                    (altitude - world.seaLevel() - 1.0D)
+                            / Math.max(1.0D, 90.0D - world.seaLevel() - 1.0D),
+                    0.0D,
+                    1.0D));
+            target = Maths.lerp(3.50D, 2.75D, alpha);
+        } else if (altitude <= 120.0D) {
+            double alpha = Maths.smooth(Maths.clamp((altitude - 90.0D) / 30.0D, 0.0D, 1.0D));
+            target = Maths.lerp(2.75D, 2.25D, alpha);
+        } else {
+            double alpha = Maths.smooth(Maths.clamp((altitude - 120.0D) / 80.0D, 0.0D, 1.0D));
+            target = Maths.lerp(2.25D, 1.75D, alpha);
+        }
+        return Math.max(settings.minimumWaterDepth(), target);
     }
 
     /**

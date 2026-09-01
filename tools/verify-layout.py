@@ -156,8 +156,18 @@ if "continentalness < settings.oceanContinentalness() && belowSea" not in terrai
     errors.append("TerrainClassifier must require submerged terrain for continental ocean classification")
 if "continentalness < settings.coastContinentalness()" not in terrain_classifier or "&& height <= seaLevel + settings.coastHeightAboveSea()" not in terrain_classifier:
     errors.append("TerrainClassifier must require both shoreline proximity and low elevation for coast")
-if "targetCoreDepth" not in lake_field or "Math.min(12.0D" not in lake_field:
+if "targetCoreDepth" not in lake_field or "Math.min(14.0D" not in lake_field:
     errors.append("LakeField must retain deeper basin-core lake shaping")
+for token in ("basinNodeCounts", "basinMinimumDepth", "Maths.lerp(3.50D, 2.50D"):
+    if token not in lake_field:
+        errors.append(f"LakeField missing altitude-/basin-size-aware depth logic: {token}")
+for token in ("minimumWaterDepth(river.waterSurfaceHeight())", "Maths.lerp(3.50D, 2.75D"):
+    if token not in river_model:
+        errors.append(f"RiverModel missing altitude-aware minimum water depth: {token}")
+
+provider = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/DefaultEngineProvider.java").read_text(encoding="utf-8")
+if 'VERSION = "0.1.0-SNAPSHOT-r27"' not in provider:
+    errors.append("Default engine provider must report r27")
 
 
 terrain_sampler = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/terrain/region/TerrainRegionSampler.java").read_text(encoding="utf-8")

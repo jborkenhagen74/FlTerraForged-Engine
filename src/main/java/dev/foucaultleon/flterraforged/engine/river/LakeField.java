@@ -30,6 +30,7 @@ public final class LakeField {
     private final double[] filledHeight;
     private final int[] basinIds;
     private final double[] basinWaterLevels;
+    private final int[] basinNodeCounts;
     private final double minimumDepth;
     private final double shoreBlend;
     private final int seaLevel;
@@ -75,6 +76,7 @@ public final class LakeField {
         BasinData basins = identifyBasins();
         this.basinIds = basins.ids();
         this.basinWaterLevels = basins.waterLevels();
+        this.basinNodeCounts = basins.nodeCounts();
     }
 
     /**
@@ -132,7 +134,10 @@ public final class LakeField {
                 0.0D,
                 1.0D));
         if (effectiveDepth < coreStart) {
-            double desiredDepth = Math.max(0.30D, Math.min(1.10D, effectiveDepth * 0.72D));
+            double naturalDepth = Math.max(0.0D, effectiveDepth * 0.72D);
+            double desiredDepth = Math.max(
+                    naturalDepth,
+                    basinMinimumDepth(basinId, waterSurface));
             return new LakeHit(
                     LakeZone.SHALLOW,
                     0.35D + waterInfluence * 0.30D,
@@ -149,8 +154,10 @@ public final class LakeField {
         // additional blocks below the spill-controlled water level. Edge/shallow zones remain
         // deliberately gentle.
         double naturalDepth = Math.max(0.0D, geometricDepth);
-        double targetCoreDepth = 1.75D + deepInfluence * 7.25D;
-        double desiredDepth = Math.min(12.0D, Math.max(naturalDepth, targetCoreDepth));
+        double targetCoreDepth = basinMinimumDepth(basinId, waterSurface)
+                + 1.50D
+                + deepInfluence * 7.00D;
+        double desiredDepth = Math.min(14.0D, Math.max(naturalDepth, targetCoreDepth));
         return new LakeHit(
                 LakeZone.CORE,
                 0.65D + deepInfluence * 0.35D,
@@ -162,6 +169,7 @@ public final class LakeField {
         int[] ids = new int[originalHeight.length];
         Arrays.fill(ids, -1);
         List<Double> levels = new ArrayList<>();
+        List<Integer> nodeCounts = new ArrayList<>();
         ArrayDeque<Integer> queue = new ArrayDeque<>();
 
         for (int index = 0; index < originalHeight.length; index++) {
@@ -173,9 +181,11 @@ public final class LakeField {
             levels.add(spillLevel - WATER_LEVEL_OFFSET);
             ids[index] = basinId;
             queue.add(index);
+            int nodeCount = 0;
 
             while (!queue.isEmpty()) {
                 int current = queue.removeFirst();
+                nodeCount++;
                 int gx = current % width;
                 int gz = current / width;
                 for (int direction = 0; direction < NEIGHBOR_X.length; direction++) {
@@ -195,13 +205,40 @@ public final class LakeField {
                     queue.addLast(candidate);
                 }
             }
+            nodeCounts.add(nodeCount);
         }
 
         double[] waterLevels = new double[levels.size()];
+        int[] counts = new int[nodeCounts.size()];
         for (int index = 0; index < levels.size(); index++) {
             waterLevels[index] = levels.get(index);
+            counts[index] = nodeCounts.get(index);
         }
-        return new BasinData(ids, waterLevels);
+        return new BasinData(ids, waterLevels, counts);
+    }
+
+    private double basinMinimumDepth(int basinId, double waterSurface) {
+        double size = Maths.smooth(Maths.clamp(
+                (basinNodeCounts[basinId] - 1.0D) / 8.0D,
+                0.0D,
+                1.0D));
+        double altitude;
+        if (waterSurface <= seaLevel + 2.0D) {
+            altitude = 3.50D;
+        } else if (waterSurface <= 90.0D) {
+            double alpha = Maths.smooth(Maths.clamp(
+                    (waterSurface - seaLevel - 2.0D)
+                            / Math.max(1.0D, 90.0D - seaLevel - 2.0D),
+                    0.0D,
+                    1.0D));
+            altitude = Maths.lerp(3.50D, 2.50D, alpha);
+        } else if (waterSurface <= 120.0D) {
+            double alpha = Maths.smooth(Maths.clamp((waterSurface - 90.0D) / 30.0D, 0.0D, 1.0D));
+            altitude = Maths.lerp(2.50D, 2.00D, alpha);
+        } else {
+            altitude = 1.75D;
+        }
+        return Maths.lerp(1.10D, altitude, size);
     }
 
     private boolean isDepressionNode(int index) {
@@ -309,6 +346,6 @@ public final class LakeField {
         return result;
     }
 
-    private record BasinData(int[] ids, double[] waterLevels) {
+    private record BasinData(int[] ids, double[] waterLevels, int[] nodeCounts) {
     }
 }

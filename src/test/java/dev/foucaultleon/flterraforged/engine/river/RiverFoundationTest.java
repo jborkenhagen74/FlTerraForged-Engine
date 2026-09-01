@@ -8,6 +8,7 @@ import dev.foucaultleon.flterraforged.engine.api.EngineContext;
 import dev.foucaultleon.flterraforged.engine.api.river.RiverSample;
 import dev.foucaultleon.flterraforged.engine.cell.CellLookup;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
@@ -201,6 +202,31 @@ final class RiverFoundationTest {
         assertEquals(first.waterSurfaceHeight(), center.waterSurfaceHeight(), 1.0E-9D);
         assertEquals(first.waterSurfaceHeight(), farSide.waterSurfaceHeight(), 1.0E-9D);
         assertEquals(69.75D, first.waterSurfaceHeight(), 1.0E-9D);
+    }
+
+    @Test
+    void broadLowlandBasinCannotCollapseToOneBlockDepth() {
+        int width = 7;
+        double[] original = new double[width * width];
+        Arrays.fill(original, 75.0D);
+        double[] filled = original.clone();
+        for (int z = 1; z <= 5; z++) {
+            for (int x = 1; x <= 5; x++) {
+                boolean rim = x == 1 || x == 5 || z == 1 || z == 5;
+                original[z * width + x] = rim ? 68.0D : 66.0D;
+                filled[z * width + x] = 70.0D;
+            }
+        }
+
+        LakeField field = new LakeField(
+                2468L, 0, 0, 10, width, original, filled, 0.85D, 1.35D, 63);
+        LakeHit innerBody = field.sample(10.0D, 30.0D);
+        LakeHit center = field.sample(30.0D, 30.0D);
+
+        assertTrue(innerBody.materialWater());
+        assertTrue(innerBody.minimumDepth() >= 3.0D, "broad lowland lake body must not be one block deep");
+        assertTrue(center.materialWater());
+        assertTrue(center.minimumDepth() >= 5.0D, "broad lowland lake core must deepen beyond its shore");
     }
 
     @Test
