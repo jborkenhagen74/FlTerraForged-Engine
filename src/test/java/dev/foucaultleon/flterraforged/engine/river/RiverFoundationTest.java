@@ -4,8 +4,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.foucaultleon.flterraforged.engine.DefaultTerrainWorld;
+import dev.foucaultleon.flterraforged.engine.EnginePreset;
+import dev.foucaultleon.flterraforged.engine.EngineSettings;
 import dev.foucaultleon.flterraforged.engine.api.EngineContext;
 import dev.foucaultleon.flterraforged.engine.api.river.RiverSample;
+import dev.foucaultleon.flterraforged.engine.api.terrain.StandardTerrainTypes;
+import dev.foucaultleon.flterraforged.engine.api.terrain.TerrainSample;
 import dev.foucaultleon.flterraforged.engine.cell.CellLookup;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -67,6 +72,26 @@ final class RiverFoundationTest {
             RiverHit hit = segment.hit(point.x(), point.z());
             assertEquals(point.waterSurfaceHeight(), hit.waterSurfaceHeight(), 1.0E-9D);
             previousWater = point.waterSurfaceHeight();
+        }
+    }
+
+    @Test
+    void refinedRiverGradeCannotCreateMultiBlockWaterBreaks() {
+        Rivermap map = model(314159L).map(0, 0);
+        for (RiverSegment segment : map.segments()) {
+            List<RiverPathPoint> path = segment.path();
+            for (int index = 1; index < path.size(); index++) {
+                RiverPathPoint previous = path.get(index - 1);
+                RiverPathPoint current = path.get(index);
+                double horizontalDistance = Math.hypot(
+                        current.x() - previous.x(),
+                        current.z() - previous.z());
+                double drop = previous.waterSurfaceHeight() - current.waterSurfaceHeight();
+                assertTrue(drop >= -1.0E-9D, "river water must not rise downstream");
+                assertTrue(
+                        drop <= horizontalDistance * 0.18D + 1.0E-9D,
+                        "river grade must be rate-limited before block projection");
+            }
         }
     }
 
@@ -230,6 +255,68 @@ final class RiverFoundationTest {
     }
 
     @Test
+    void broadLakeBedRemainsContinuousAcrossDrainageGridCells() {
+        int width = 7;
+        double[] original = new double[width * width];
+        Arrays.fill(original, 75.0D);
+        double[] filled = original.clone();
+        for (int z = 1; z <= 5; z++) {
+            for (int x = 1; x <= 5; x++) {
+                boolean rim = x == 1 || x == 5 || z == 1 || z == 5;
+                original[z * width + x] = rim ? 68.0D : 66.0D;
+                filled[z * width + x] = 70.0D;
+            }
+        }
+
+        LakeField field = new LakeField(
+                2468L, 0, 0, 10, width, original, filled, 0.85D, 1.35D, 63);
+        LakeHit previous = field.sample(8.0D, 30.0D);
+        assertTrue(previous.materialWater());
+        for (int x = 9; x <= 30; x++) {
+            LakeHit current = field.sample(x, 30.0D);
+            assertTrue(current.materialWater());
+            assertTrue(
+                    Math.abs(current.shoreDistance() - previous.shoreDistance()) <= 1.25D,
+                    "signed lake distance must not jump at a coarse drainage-grid edge");
+            int previousBed = (int) Math.floor(
+                    previous.waterSurfaceHeight() - previous.minimumDepth());
+            int currentBed = (int) Math.floor(
+                    current.waterSurfaceHeight() - current.minimumDepth());
+            assertTrue(
+                    Math.abs(currentBed - previousBed) <= 1,
+                    "projected lake bed must change by at most one block per horizontal block");
+            previous = current;
+        }
+    }
+
+    @Test
+    void residualTerrainRidgeCannotLeaveOneColumnRiverHole() {
+        try (DefaultTerrainWorld world = new DefaultTerrainWorld(
+                new EngineContext(123456789L, -64, 320, 63),
+                EngineSettings.preset(EnginePreset.CENTRAL_EUROPE))) {
+            TerrainSample center = world.sample(-91, -507);
+            assertTrue(StandardTerrainTypes.RIVER.equals(center.terrainType()));
+            assertTrue(center.river().hasWaterSurfaceHeight());
+            assertTrue(center.river().waterSurfaceHeight() > center.surfaceHeight());
+        }
+    }
+
+    @Test
+    void confluenceCannotCreateAQuantizedBedCliff() {
+        try (DefaultTerrainWorld world = new DefaultTerrainWorld(
+                new EngineContext(778899L, -64, 320, 63),
+                EngineSettings.preset(EnginePreset.CENTRAL_EUROPE))) {
+            for (int z = -515; z <= -503; z++) {
+                for (int x = -80; x <= -68; x++) {
+                    TerrainSample center = world.sample(x, z);
+                    assertBedStepAtMostOne(center, world.sample(x + 1, z));
+                    assertBedStepAtMostOne(center, world.sample(x, z + 1));
+                }
+            }
+        }
+    }
+
+    @Test
     void concurrentRivermapSamplingIsStable() throws Exception {
         RiverModel river = model(775533L);
         RiverSample expected = river.sample(96, 96);
@@ -251,6 +338,22 @@ final class RiverFoundationTest {
         EngineContext context = new EngineContext(seed, -64, 320, 63);
         CellLookup terrain = syntheticDrainageSurface();
         return new RiverModel(seed, context, terrain, terrain, settings());
+    }
+
+    private static void assertBedStepAtMostOne(TerrainSample first, TerrainSample second) {
+        if (!materialWater(first) || !materialWater(second)) {
+            return;
+        }
+        int firstBed = (int) Math.floor(first.surfaceHeight());
+        int secondBed = (int) Math.floor(second.surfaceHeight());
+        assertTrue(
+                Math.abs(firstBed - secondBed) <= 1,
+                "neighboring material-water beds must not form a multi-block cliff");
+    }
+
+    private static boolean materialWater(TerrainSample sample) {
+        return sample.river().hasWaterSurfaceHeight()
+                && sample.river().waterSurfaceHeight() > sample.surfaceHeight() + 0.05D;
     }
 
     private static CellLookup syntheticDrainageSurface() {

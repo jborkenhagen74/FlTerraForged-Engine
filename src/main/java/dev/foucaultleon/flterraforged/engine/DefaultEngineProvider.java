@@ -13,7 +13,7 @@ public final class DefaultEngineProvider implements EngineProvider {
     public static final EngineId ID = EngineId.of("flterraforged", "default");
 
     /** Version of this engine implementation. */
-    public static final String VERSION = "0.1.0-SNAPSHOT-r27";
+    public static final String VERSION = "0.1.0-SNAPSHOT-r28";
 
     /** Creates the ServiceLoader provider. */
     public DefaultEngineProvider() {

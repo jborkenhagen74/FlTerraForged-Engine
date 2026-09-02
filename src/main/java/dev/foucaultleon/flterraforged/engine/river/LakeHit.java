@@ -7,15 +7,35 @@ package dev.foucaultleon.flterraforged.engine.river;
  * @param influence normalized inland-water influence in {@code [0,1]}
  * @param waterSurfaceHeight constant continuous basin water surface in world Y
  * @param minimumDepth desired minimum local water depth in blocks
+ * @param shoreDistance signed approximate horizontal distance from the shoreline in blocks;
+ *        positive values point into the water body and negative values point onto land
  */
 public record LakeHit(
         LakeZone zone,
         double influence,
         double waterSurfaceHeight,
-        double minimumDepth) {
+        double minimumDepth,
+        double shoreDistance) {
 
     /** Marker used outside inland-water basins. */
-    public static final LakeHit NONE = new LakeHit(LakeZone.NONE, 0.0D, Double.NaN, 0.0D);
+    public static final LakeHit NONE = new LakeHit(
+            LakeZone.NONE, 0.0D, Double.NaN, 0.0D, Double.NEGATIVE_INFINITY);
+
+    /**
+     * Creates the legacy four-value lake hit without an explicit shoreline distance.
+     *
+     * @param zone semantic basin zone
+     * @param influence normalized inland-water influence
+     * @param waterSurfaceHeight constant basin water surface
+     * @param minimumDepth desired minimum local depth
+     */
+    public LakeHit(
+            LakeZone zone,
+            double influence,
+            double waterSurfaceHeight,
+            double minimumDepth) {
+        this(zone, influence, waterSurfaceHeight, minimumDepth, 0.0D);
+    }
 
     /**
      * Returns whether this sample belongs to a lake or pond zone.

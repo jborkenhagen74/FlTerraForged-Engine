@@ -1,5 +1,15 @@
 # FlTerraForged Engine
 
+## r28: continuous water geometry
+
+r28 removes the last drainage-grid discontinuity from lake bathymetry. Each connected basin now
+owns a precomputed horizontal distance field to its boundary; shore width and depth are sampled
+continuously across grid cells. Refined river surfaces are additionally grade-limited before the
+Minecraft host quantizes them. Wet river beds use a bounded centerline-distance profile instead of
+the width/flow of whichever segment wins at a confluence, and a bounded residual-ridge correction
+removes isolated peaks without accepting deep uncarveable water signals. Targeted regression scans
+therefore permit neither multi-block adjacent bed/water jumps nor enclosed semantic holes.
+
 ## r27: altitude-aware inland-water depth
 
 r27 keeps r26 marine bathymetry and correct ocean/coast classification, but removes the fixed

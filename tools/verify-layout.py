@@ -156,7 +156,7 @@ if "continentalness < settings.oceanContinentalness() && belowSea" not in terrai
     errors.append("TerrainClassifier must require submerged terrain for continental ocean classification")
 if "continentalness < settings.coastContinentalness()" not in terrain_classifier or "&& height <= seaLevel + settings.coastHeightAboveSea()" not in terrain_classifier:
     errors.append("TerrainClassifier must require both shoreline proximity and low elevation for coast")
-if "targetCoreDepth" not in lake_field or "Math.min(14.0D" not in lake_field:
+if "targetDepth" not in lake_field or "Math.min(14.0D" not in lake_field:
     errors.append("LakeField must retain deeper basin-core lake shaping")
 for token in ("basinNodeCounts", "basinMinimumDepth", "Maths.lerp(3.50D, 2.50D"):
     if token not in lake_field:
@@ -164,10 +164,41 @@ for token in ("basinNodeCounts", "basinMinimumDepth", "Maths.lerp(3.50D, 2.50D")
 for token in ("minimumWaterDepth(river.waterSurfaceHeight())", "Maths.lerp(3.50D, 2.75D"):
     if token not in river_model:
         errors.append(f"RiverModel missing altitude-aware minimum water depth: {token}")
+for token in (
+        "MAXIMUM_BED_GRADE = 0.50D",
+        "MAXIMUM_RIDGE_CORRECTION = 2.0D",
+        "desiredWaterDepth(river, wetChannel)",
+        "carveableWetChannel",
+        "river.waterSurfaceHeight() - finalHeight"):
+    if token not in river_model:
+        errors.append(f"RiverModel missing continuous bounded wet-bed logic: {token}")
 
 provider = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/DefaultEngineProvider.java").read_text(encoding="utf-8")
-if 'VERSION = "0.1.0-SNAPSHOT-r27"' not in provider:
-    errors.append("Default engine provider must report r27")
+for token in (
+        "computeBasinInteriorDistances",
+        "bilinearBasinDistance",
+        "SHORE_TRANSITION_WIDTH = 10.0D",
+        "SHORE_REFERENCE_GRADE",
+        "Math.min(depthDistance, topologyDistance)"):
+    if token not in lake_field:
+        errors.append(f"LakeField missing continuous shoreline-distance geometry: {token}")
+if "bilinearGradient" in lake_field:
+    errors.append("LakeField must not divide shoreline distance by discontinuous local cell gradient")
+for token in ("MAX_WATER_SURFACE_GRADE", "limitWaterSurfaceGrade"):
+    if token not in (root / "src/main/java/dev/foucaultleon/flterraforged/engine/river/RivermapGenerator.java").read_text(encoding="utf-8"):
+        errors.append(f"RivermapGenerator missing bounded water grade: {token}")
+
+river_tests = (root / "src/test/java/dev/foucaultleon/flterraforged/engine/river/RiverFoundationTest.java").read_text(encoding="utf-8")
+for token in (
+        "refinedRiverGradeCannotCreateMultiBlockWaterBreaks",
+        "broadLakeBedRemainsContinuousAcrossDrainageGridCells",
+        "residualTerrainRidgeCannotLeaveOneColumnRiverHole",
+        "confluenceCannotCreateAQuantizedBedCliff"):
+    if token not in river_tests:
+        errors.append(f"Engine hydrology regression test missing: {token}")
+
+if 'VERSION = "0.1.0-SNAPSHOT-r28"' not in provider:
+    errors.append("Default engine provider must report r28")
 
 
 terrain_sampler = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/terrain/region/TerrainRegionSampler.java").read_text(encoding="utf-8")

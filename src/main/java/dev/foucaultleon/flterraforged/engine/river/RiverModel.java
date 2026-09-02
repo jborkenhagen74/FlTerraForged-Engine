@@ -17,6 +17,11 @@ import java.util.Objects;
  */
 public final class RiverModel implements CellLookup {
 
+    private static final double WET_CHANNEL_RADIUS = 0.78D;
+    private static final double EDGE_WATER_DEPTH = 1.10D;
+    private static final double MAXIMUM_BED_GRADE = 0.50D;
+    private static final double MAXIMUM_RIDGE_CORRECTION = 2.0D;
+
     private final EngineContext world;
     private final CellLookup erodedTerrain;
     private final RiverSettings settings;
@@ -106,8 +111,8 @@ public final class RiverModel implements CellLookup {
             target.lake = true;
             target.lakeShore = false;
             target.riverMask = 1.0D - lake.influence();
-            target.riverDistance = 0.0D;
-            target.riverWidth = settings.gridSpacing() * (1.0D + lake.influence() * 5.0D);
+            target.riverDistance = -lake.shoreDistance();
+            target.riverWidth = LakeField.SHORE_TRANSITION_WIDTH;
             target.riverDepth = Math.max(
                     lake.minimumDepth(),
                     Math.max(lakeIncision, lake.waterSurfaceHeight() - lakeBed));
@@ -121,9 +126,11 @@ public final class RiverModel implements CellLookup {
         target.lakeShore = lake.shore();
         if (!river.present() || (lake.shore() && river.depth() <= 0.05D)) {
             target.riverMask = 1.0D;
-            target.riverDistance = lake.shore() ? 0.0D : settings.regionSize() * 2.0D;
+            target.riverDistance = lake.shore()
+                    ? -lake.shoreDistance()
+                    : settings.regionSize() * 2.0D;
             target.riverWidth = lake.shore()
-                    ? settings.gridSpacing() * (1.0D + lake.influence() * 5.0D)
+                    ? LakeField.SHORE_TRANSITION_WIDTH
                     : settings.minimumWidth();
             target.riverDepth = 0.0D;
             target.riverWaterSurfaceHeight = lake.shore()
@@ -136,28 +143,65 @@ public final class RiverModel implements CellLookup {
 
         double halfWidth = Math.max(0.5D, river.width() * 0.5D);
         double normalizedDistance = Maths.clamp(river.distance() / halfWidth, 0.0D, 1.0D);
-        double wetCore = 1.0D - Maths.smooth(Maths.clamp((normalizedDistance - 0.18D) / 0.70D, 0.0D, 1.0D));
-        double desiredWaterDepth = minimumWaterDepth(river.waterSurfaceHeight()) * wetCore;
-        double requiredIncision = river.depth();
-        if (desiredWaterDepth > 0.05D && Double.isFinite(river.waterSurfaceHeight())) {
-            requiredIncision = Math.max(
-                    requiredIncision,
-                    target.heightErosion - (river.waterSurfaceHeight() - desiredWaterDepth));
+        boolean wetChannel = normalizedDistance <= WET_CHANNEL_RADIUS
+                && Double.isFinite(river.waterSurfaceHeight());
+        double desiredWaterDepth = desiredWaterDepth(river, wetChannel);
+        double localIncision;
+        double finalHeight;
+        boolean carveableWetChannel = false;
+        if (wetChannel) {
+            // A river bed is a hydraulic profile, not eroded terrain with an arbitrary depth
+            // subtracted from it. Limiting depth growth by horizontal distance makes the bed
+            // Lipschitz-continuous: together with the separately grade-limited water surface, two
+            // neighboring wet columns cannot become a two-block cliff after integer quantization.
+            double desiredBed = river.waterSurfaceHeight() - desiredWaterDepth;
+            double requiredIncision = Math.max(0.0D, target.heightErosion - desiredBed);
+            carveableWetChannel = requiredIncision
+                    <= settings.maximumDepth() + MAXIMUM_RIDGE_CORRECTION;
+            if (carveableWetChannel) {
+                finalHeight = Math.min(target.heightErosion, desiredBed);
+                localIncision = Math.max(0.0D, target.heightErosion - finalHeight);
+            } else {
+                localIncision = Maths.clamp(river.depth(), 0.0D, settings.maximumDepth());
+                finalHeight = target.heightErosion - localIncision;
+            }
+        } else {
+            localIncision = Maths.clamp(river.depth(), 0.0D, settings.maximumDepth());
+            finalHeight = target.heightErosion - localIncision;
         }
-        double localIncision = Maths.clamp(requiredIncision, 0.0D, settings.maximumDepth());
+        finalHeight = Maths.clamp(
+                finalHeight,
+                world.minY() + 1.0D,
+                world.maxYExclusive() - 2.0D);
+        boolean materialWater = carveableWetChannel
+                && river.waterSurfaceHeight() > finalHeight + 0.05D;
 
         target.riverMask = Maths.smooth(normalizedDistance);
         target.riverDistance = river.distance();
         target.riverWidth = river.width();
-        target.riverDepth = localIncision;
-        target.riverWaterSurfaceHeight = localIncision > 0.0D
+        target.riverDepth = materialWater
+                ? river.waterSurfaceHeight() - finalHeight
+                : localIncision;
+        target.riverWaterSurfaceHeight = materialWater
                 ? river.waterSurfaceHeight()
                 : Double.NaN;
         target.riverFlow = river.flow();
-        target.height = Maths.clamp(
-                target.heightErosion - localIncision,
-                world.minY() + 1.0D,
-                world.maxYExclusive() - 2.0D);
+        target.height = finalHeight;
+    }
+
+    private double desiredWaterDepth(RiverHit river, boolean wetChannel) {
+        if (!wetChannel) {
+            return 0.0D;
+        }
+        // Depth is a function of centerline distance, not of the winning segment width or flow.
+        // At a confluence, adjacent columns can legitimately choose different source segments;
+        // deriving the bed from width/flow there would create a discontinuous trench wall.
+        double centerDepth = minimumWaterDepth(river.waterSurfaceHeight());
+        double gradeLimitedDepth = centerDepth - river.distance() * MAXIMUM_BED_GRADE;
+        return Maths.clamp(
+                gradeLimitedDepth,
+                EDGE_WATER_DEPTH,
+                settings.maximumDepth());
     }
 
     private double minimumWaterDepth(double waterSurfaceHeight) {

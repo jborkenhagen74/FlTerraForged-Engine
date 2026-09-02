@@ -22,6 +22,8 @@ import java.util.PriorityQueue;
  */
 public final class RivermapGenerator {
 
+    private static final double MAX_WATER_SURFACE_GRADE = 0.18D;
+
     private static final int[] DX = {-1, 0, 1, -1, 1, -1, 0, 1};
     private static final int[] DZ = {-1, -1, -1, 0, 0, 1, 1, 1};
     private static final double HEIGHT_EPSILON = 1.0E-7D;
@@ -436,7 +438,6 @@ public final class RivermapGenerator {
         double[] terrainHeight = new double[samples];
         double[] waterHeight = new double[samples];
         double bankProbe = Math.max(2.5D, width * 0.62D + 1.0D);
-        double previousWater = Double.POSITIVE_INFINITY;
         Cell center = new Cell();
         Cell leftBank = new Cell();
         Cell rightBank = new Cell();
@@ -474,10 +475,10 @@ public final class RivermapGenerator {
                     center.heightErosion,
                     Math.min(leftBank.heightErosion, rightBank.heightErosion))
                     - settings.bankFreeboard();
-            double containedWater = Math.min(desiredWater, containmentCeiling);
-            waterHeight[index] = Math.min(previousWater, containedWater);
-            previousWater = waterHeight[index];
+            waterHeight[index] = Math.min(desiredWater, containmentCeiling);
         }
+
+        limitWaterSurfaceGrade(pathX, pathZ, waterHeight);
 
         List<RiverPathPoint> path = new ArrayList<>(samples);
         for (int index = 0; index < samples; index++) {
@@ -488,6 +489,23 @@ public final class RivermapGenerator {
                     waterHeight[index]));
         }
         return List.copyOf(path);
+    }
+
+    private static void limitWaterSurfaceGrade(
+            double[] pathX,
+            double[] pathZ,
+            double[] waterHeight) {
+        for (int index = 1; index < waterHeight.length; index++) {
+            waterHeight[index] = Math.min(waterHeight[index - 1], waterHeight[index]);
+        }
+        for (int index = waterHeight.length - 2; index >= 0; index--) {
+            double distance = Math.hypot(
+                    pathX[index + 1] - pathX[index],
+                    pathZ[index + 1] - pathZ[index]);
+            double maximumUpstreamHeight = waterHeight[index + 1]
+                    + Math.max(0.10D, distance * MAX_WATER_SURFACE_GRADE);
+            waterHeight[index] = Math.min(waterHeight[index], maximumUpstreamHeight);
+        }
     }
 
     private void lookupTerrain(double x, double z, Cell target) {

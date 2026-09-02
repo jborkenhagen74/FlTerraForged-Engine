@@ -4,8 +4,10 @@ import dev.foucaultleon.flterraforged.engine.internal.Maths;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import java.util.PriorityQueue;
 
 /**
  * Immutable basin-aware depression field used to materialize irregular ponds and lakes.
@@ -16,8 +18,16 @@ import java.util.Objects;
  */
 public final class LakeField {
 
+    /** Horizontal dry-to-wet transition used by materializers around lake basins. */
+    public static final double SHORE_TRANSITION_WIDTH = 10.0D;
+
     private static final double BASIN_EPSILON = 1.0E-6D;
     private static final double WATER_LEVEL_OFFSET = 0.25D;
+    private static final double WATER_EDGE_INSET = 0.75D;
+    private static final double SHORE_REFERENCE_GRADE = 0.18D;
+    private static final double CORE_DISTANCE = 5.75D;
+    private static final double DEEP_DISTANCE = 24.0D;
+    private static final double EDGE_WATER_DEPTH = 1.25D;
     private static final int[] NEIGHBOR_X = {-1, 0, 1, -1, 1, -1, 0, 1};
     private static final int[] NEIGHBOR_Z = {-1, -1, -1, 0, 0, 1, 1, 1};
 
@@ -31,6 +41,7 @@ public final class LakeField {
     private final int[] basinIds;
     private final double[] basinWaterLevels;
     private final int[] basinNodeCounts;
+    private final double[] basinInteriorDistance;
     private final double minimumDepth;
     private final double shoreBlend;
     private final int seaLevel;
@@ -77,6 +88,7 @@ public final class LakeField {
         this.basinIds = basins.ids();
         this.basinWaterLevels = basins.waterLevels();
         this.basinNodeCounts = basins.nodeCounts();
+        this.basinInteriorDistance = computeBasinInteriorDistances();
     }
 
     /**
@@ -111,58 +123,49 @@ public final class LakeField {
         double geometricDepth = waterSurface - original;
         double shorelineNoise = smoothValueNoise(x * 0.035D, z * 0.035D) * Math.min(0.32D, shoreBlend * 0.24D);
         double effectiveDepth = geometricDepth + shorelineNoise;
-        double shoreReach = Math.max(0.30D, shoreBlend * 0.45D);
-        if (effectiveDepth <= -shoreReach) {
+        double depthDistance = effectiveDepth / SHORE_REFERENCE_GRADE;
+        double topologyDistance = bilinearBasinDistance(gx, gz, tx, tz, basinId);
+        double shoreDistance = Math.min(depthDistance, topologyDistance);
+        if (shoreDistance <= -SHORE_TRANSITION_WIDTH) {
             return LakeHit.NONE;
         }
 
-        if (effectiveDepth < minimumDepth) {
+        if (shoreDistance < WATER_EDGE_INSET) {
             double shoreInfluence = Maths.smooth(Maths.clamp(
-                    (effectiveDepth + shoreReach) / (minimumDepth + shoreReach),
+                    (shoreDistance + SHORE_TRANSITION_WIDTH)
+                            / (SHORE_TRANSITION_WIDTH + WATER_EDGE_INSET),
                     0.0D,
                     1.0D));
             return new LakeHit(
                     LakeZone.SHORE,
                     shoreInfluence * 0.34D,
                     waterSurface,
-                    0.0D);
+                    0.0D,
+                    shoreDistance);
         }
 
-        double coreStart = minimumDepth + shoreBlend * 0.72D;
-        double waterInfluence = Maths.smooth(Maths.clamp(
-                (effectiveDepth - minimumDepth) / Math.max(0.001D, coreStart - minimumDepth),
+        double waterDistance = shoreDistance - WATER_EDGE_INSET;
+        double bodyInfluence = Maths.smooth(Maths.clamp(
+                waterDistance / CORE_DISTANCE,
                 0.0D,
                 1.0D));
-        if (effectiveDepth < coreStart) {
-            double naturalDepth = Math.max(0.0D, effectiveDepth * 0.72D);
-            double desiredDepth = Math.max(
-                    naturalDepth,
-                    basinMinimumDepth(basinId, waterSurface));
-            return new LakeHit(
-                    LakeZone.SHALLOW,
-                    0.35D + waterInfluence * 0.30D,
-                    waterSurface,
-                    desiredDepth);
-        }
-
         double deepInfluence = Maths.smooth(Maths.clamp(
-                (effectiveDepth - coreStart) / Math.max(0.001D, shoreBlend * 1.35D),
+                (waterDistance - CORE_DISTANCE) / (DEEP_DISTANCE - CORE_DISTANCE),
                 0.0D,
                 1.0D));
-        // Core water should read as an actual lake rather than a uniformly shallow flooded
-        // depression. Preserve naturally deep basins and allow the central bowl to cut several
-        // additional blocks below the spill-controlled water level. Edge/shallow zones remain
-        // deliberately gentle.
         double naturalDepth = Math.max(0.0D, geometricDepth);
-        double targetCoreDepth = basinMinimumDepth(basinId, waterSurface)
-                + 1.50D
-                + deepInfluence * 7.00D;
-        double desiredDepth = Math.min(14.0D, Math.max(naturalDepth, targetCoreDepth));
+        double bodyDepth = Maths.lerp(
+                EDGE_WATER_DEPTH,
+                basinMinimumDepth(basinId, waterSurface),
+                bodyInfluence);
+        double targetDepth = bodyDepth + deepInfluence * 8.0D;
+        double desiredDepth = Math.min(14.0D, Math.max(naturalDepth, targetDepth));
         return new LakeHit(
-                LakeZone.CORE,
-                0.65D + deepInfluence * 0.35D,
+                waterDistance >= CORE_DISTANCE ? LakeZone.CORE : LakeZone.SHALLOW,
+                0.35D + bodyInfluence * 0.30D + deepInfluence * 0.35D,
                 waterSurface,
-                desiredDepth);
+                desiredDepth,
+                shoreDistance);
     }
 
     private BasinData identifyBasins() {
@@ -281,6 +284,91 @@ public final class LakeField {
         return best;
     }
 
+    private double[] computeBasinInteriorDistances() {
+        double[] distances = new double[basinIds.length];
+        Arrays.fill(distances, Double.POSITIVE_INFINITY);
+        PriorityQueue<DistanceNode> queue = new PriorityQueue<>(Comparator
+                .comparingDouble(DistanceNode::distance)
+                .thenComparingInt(DistanceNode::index));
+        double boundaryDistance = spacing * 0.5D;
+        for (int index = 0; index < basinIds.length; index++) {
+            if (basinIds[index] < 0 || !isBasinBoundary(index)) {
+                continue;
+            }
+            distances[index] = boundaryDistance;
+            queue.add(new DistanceNode(index, boundaryDistance));
+        }
+
+        while (!queue.isEmpty()) {
+            DistanceNode current = queue.remove();
+            if (current.distance() > distances[current.index()] + BASIN_EPSILON) {
+                continue;
+            }
+            int gx = current.index() % width;
+            int gz = current.index() / width;
+            int basinId = basinIds[current.index()];
+            for (int direction = 0; direction < NEIGHBOR_X.length; direction++) {
+                int nx = gx + NEIGHBOR_X[direction];
+                int nz = gz + NEIGHBOR_Z[direction];
+                if (nx < 0 || nz < 0 || nx >= width || nz >= width) {
+                    continue;
+                }
+                int candidate = nz * width + nx;
+                if (basinIds[candidate] != basinId) {
+                    continue;
+                }
+                double step = NEIGHBOR_X[direction] == 0 || NEIGHBOR_Z[direction] == 0
+                        ? spacing
+                        : spacing * Math.sqrt(2.0D);
+                double candidateDistance = current.distance() + step;
+                if (candidateDistance + BASIN_EPSILON < distances[candidate]) {
+                    distances[candidate] = candidateDistance;
+                    queue.add(new DistanceNode(candidate, candidateDistance));
+                }
+            }
+        }
+        return distances;
+    }
+
+    private boolean isBasinBoundary(int index) {
+        int basinId = basinIds[index];
+        int gx = index % width;
+        int gz = index / width;
+        if (gx == 0 || gz == 0 || gx == width - 1 || gz == width - 1) {
+            return true;
+        }
+        for (int direction = 0; direction < NEIGHBOR_X.length; direction++) {
+            int candidate = (gz + NEIGHBOR_Z[direction]) * width
+                    + gx + NEIGHBOR_X[direction];
+            if (basinIds[candidate] != basinId) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private double bilinearBasinDistance(
+            int gx,
+            int gz,
+            double tx,
+            double tz,
+            int basinId) {
+        int a = gz * width + gx;
+        int b = a + 1;
+        int c = (gz + 1) * width + gx;
+        int d = c + 1;
+        double outside = spacing * -0.5D;
+        double top = Maths.lerp(
+                basinIds[a] == basinId ? basinInteriorDistance[a] : outside,
+                basinIds[b] == basinId ? basinInteriorDistance[b] : outside,
+                tx);
+        double bottom = Maths.lerp(
+                basinIds[c] == basinId ? basinInteriorDistance[c] : outside,
+                basinIds[d] == basinId ? basinInteriorDistance[d] : outside,
+                tx);
+        return Maths.lerp(top, bottom, tz);
+    }
+
     private double bilinear(double[] values, int gx, int gz, double tx, double tz) {
         double a = values[gz * width + gx];
         double b = values[gz * width + gx + 1];
@@ -347,5 +435,8 @@ public final class LakeField {
     }
 
     private record BasinData(int[] ids, double[] waterLevels, int[] nodeCounts) {
+    }
+
+    private record DistanceNode(int index, double distance) {
     }
 }

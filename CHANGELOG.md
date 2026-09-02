@@ -1,3 +1,14 @@
+## 0.1.0-SNAPSHOT-r28
+
+- Replace the discontinuous local-gradient estimate for lake shore distance with a basin-owned distance transform that is bilinearly sampled across drainage-grid cells.
+- Cap shoreline depth by both the continuous basin boundary and the continuous water-to-terrain depth, preventing internal grid edges from becoming artificial lake cliffs.
+- Use a ten-block dry-to-wet lake shore transition and a continuous shallow-to-deep curve up to fourteen blocks while preserving one constant spill-controlled surface per basin.
+- Rate-limit refined river water surfaces to a maximum continuous grade of 0.18 blocks per horizontal block and distribute required drops backward along the path.
+- Derive a wet river bed from centerline distance and altitude with a maximum 0.50-block transverse grade. Segment width and flow still control channel extent/routing but can no longer create a bed cliff when the nearest segment changes at a confluence.
+- Permit a bounded two-block residual-ridge correction above normal incision so an isolated terrain peak cannot survive inside an otherwise continuous wet channel. Deeper uncarveable signals are rejected instead of creating hidden or subterranean water.
+- Add regression tests for coarse-grid lake continuity, bounded downstream river grade, the known residual-ridge hole and a width/flow-changing confluence; projected adjacent wet beds and water surfaces may change by at most one block.
+- Report provider version `0.1.0-SNAPSHOT-r28`.
+
 ## 0.1.0-SNAPSHOT-r27
 
 - Replace the previous fixed 1.35-block river-core minimum with a continuous altitude-aware depth curve. Lowland river cores target 3.5 blocks before edge tapering, mid-elevation channels transition toward 2.75 blocks, and high-alpine streams gradually approach 1.75 blocks.
@@ -65,8 +76,6 @@
 - Broadened terrain transition widths to 0.50 (balanced), 0.60 (gentle) and 0.42 (rugged).
 - Kept the multi-region scan off the hot path away from boundaries: ordinary region interiors still use the single owning terrain directly.
 - Preserved the r19 world sample cache and all r18 hydrology/runoff behavior.
-
-# Changelog
 
 ## 0.1.0-SNAPSHOT-r19
 
