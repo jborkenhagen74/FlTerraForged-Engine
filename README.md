@@ -1,5 +1,16 @@
 # FlTerraForged Engine
 
+## r29: continuous wet-to-dry shore geometry
+
+r29 extends the continuous hydrology model across the actual wet-to-dry boundary. River banks now
+start at the hydraulic waterline and blend back into the original biome terrain over a flow-aware
+eight-to-twelve-block envelope; lake shores apply the same rule to their basin-owned signed
+distance. Surface-aware segment selection prevents a deeply buried projected crossing from
+displacing a nearby visible channel. A narrow coast-height release also suppresses unmasked detail
+spikes at the ocean waterline without turning unrelated inland lowlands into sea. The final
+classification requires material river water before assigning the river terrain role, preserving
+submerged coast semantics around dry channel envelopes.
+
 ## r28: continuous water geometry
 
 r28 removes the last drainage-grid discontinuity from lake bathymetry. Each connected basin now
@@ -128,7 +139,7 @@ dev.foucaultleon:flterraforged-engine:0.1.0-SNAPSHOT
 
 ## Current implementation
 
-`0.1.0-SNAPSHOT-r27` combines the migrated foundations into one coordinated pipeline and adds configurable terrain-region weights plus randomized/north-south macro-climate layouts:
+`0.1.0-SNAPSHOT-r29` combines the migrated foundations into one coordinated pipeline and adds configurable terrain-region weights plus randomized/north-south macro-climate layouts:
 
 1. **Noise** — seed-aware modular scalar fields, interpolation, gradient/value
    sources, octave composition, arithmetic modules, curve/distance functions and

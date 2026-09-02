@@ -112,7 +112,7 @@ public final class TerrainClassifier {
         if (lake && river.hasWaterSurfaceHeight()) {
             return StandardTerrainTypes.LAKE;
         }
-        if (river.depth() >= settings.riverDepth()) {
+        if (river.hasWaterSurfaceHeight() && river.depth() >= settings.riverDepth()) {
             return StandardTerrainTypes.RIVER;
         }
         if (lakeShore) {

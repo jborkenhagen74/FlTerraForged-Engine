@@ -1,3 +1,14 @@
+## 0.1.0-SNAPSHOT-r29
+
+- Shape the previously semantic-only dry lake shore into a continuous basin-waterline-to-terrain transition.
+- Shape dry river banks from the wet-channel radius through the same flow-aware 8-12 block envelope consumed by host materializers.
+- Select nearby projected river segments with a terrain-surface alignment score so a deeply buried crossing cannot replace a similarly close visible channel.
+- Replace hard uncarveable wet-core spikes with a waterline bank fallback and retain bounded ridge tolerance for locally reachable channels.
+- Require an actual river water surface before the final classifier assigns `RIVER`, preventing dry incision envelopes from overriding submerged `COAST` semantics.
+- Soft-limit local terrain detail in the narrow continental coast band, eliminating multi-block first-land shelves while releasing the cap smoothly inland.
+- Add wet-to-dry river and marine shoreline regression tests; complete multi-seed audits require zero dry-below-water cells and at most one block of first-bank rise.
+- Report provider version `0.1.0-SNAPSHOT-r29`.
+
 ## 0.1.0-SNAPSHOT-r28
 
 - Replace the discontinuous local-gradient estimate for lake shore distance with a basin-owned distance transform that is bilinearly sampled across drainage-grid cells.

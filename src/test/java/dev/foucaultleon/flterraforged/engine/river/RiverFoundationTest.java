@@ -290,14 +290,20 @@ final class RiverFoundationTest {
     }
 
     @Test
-    void residualTerrainRidgeCannotLeaveOneColumnRiverHole() {
+    void wetToDryRiverEdgeStaysAtTheWaterline() {
         try (DefaultTerrainWorld world = new DefaultTerrainWorld(
                 new EngineContext(123456789L, -64, 320, 63),
                 EngineSettings.preset(EnginePreset.CENTRAL_EUROPE))) {
-            TerrainSample center = world.sample(-91, -507);
-            assertTrue(StandardTerrainTypes.RIVER.equals(center.terrainType()));
-            assertTrue(center.river().hasWaterSurfaceHeight());
-            assertTrue(center.river().waterSurfaceHeight() > center.surfaceHeight());
+            for (int z = -512; z < -448; z++) {
+                for (int x = -128; x < -32; x++) {
+                    TerrainSample wet = world.sample(x, z);
+                    if (!materialWater(wet) || isMarine(wet)) {
+                        continue;
+                    }
+                    assertDryEdgeAtWaterline(wet, world.sample(x + 1, z));
+                    assertDryEdgeAtWaterline(wet, world.sample(x, z + 1));
+                }
+            }
         }
     }
 
@@ -354,6 +360,21 @@ final class RiverFoundationTest {
     private static boolean materialWater(TerrainSample sample) {
         return sample.river().hasWaterSurfaceHeight()
                 && sample.river().waterSurfaceHeight() > sample.surfaceHeight() + 0.05D;
+    }
+
+    private static void assertDryEdgeAtWaterline(TerrainSample wet, TerrainSample candidate) {
+        if (materialWater(candidate) || isMarine(candidate)) {
+            return;
+        }
+        int waterY = (int) Math.floor(wet.river().waterSurfaceHeight());
+        int dryY = (int) Math.floor(candidate.surfaceHeight());
+        assertTrue(dryY >= waterY, "dry river edge must not form a trench below the waterline");
+        assertTrue(dryY <= waterY + 1, "dry river edge must rise by at most one block");
+    }
+
+    private static boolean isMarine(TerrainSample sample) {
+        return StandardTerrainTypes.OCEAN.equals(sample.terrainType())
+                || StandardTerrainTypes.COAST.equals(sample.terrainType());
     }
 
     private static CellLookup syntheticDrainageSurface() {

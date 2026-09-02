@@ -10,6 +10,10 @@ import java.util.Objects;
  */
 public final class ConfiguredTerrain implements Terrain {
 
+    private static final double COASTAL_RELEASE_START = -0.34D;
+    private static final double COASTAL_RELEASE_END = -0.14D;
+    private static final double COASTAL_HEIGHT_ABOVE_SEA = 1.25D;
+
     private final TerrainType type;
     private final TerrainCategory category;
     private final Noise2D shape;
@@ -89,13 +93,20 @@ public final class ConfiguredTerrain implements Terrain {
         double bathymetry = relief * (0.18D * shelf + 0.62D * deep);
         double floorVariation = Math.abs(detailValue) * detailRelief * 0.65D * deep;
 
-        return context.world().seaLevel()
+        double height = context.world().seaLevel()
                 + baseOffset
                 + landBase
                 + shaped
                 + fine
                 - bathymetry
                 - floorVariation;
+        double coastalRelease = Maths.smooth(Maths.clamp(
+                (continentalness - COASTAL_RELEASE_START)
+                        / (COASTAL_RELEASE_END - COASTAL_RELEASE_START),
+                0.0D,
+                1.0D));
+        double coastalCeiling = context.world().seaLevel() + COASTAL_HEIGHT_ABOVE_SEA;
+        return Maths.lerp(Math.min(height, coastalCeiling), height, coastalRelease);
     }
 
     /** {@inheritDoc} */

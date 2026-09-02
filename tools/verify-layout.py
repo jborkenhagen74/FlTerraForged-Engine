@@ -152,10 +152,15 @@ configured_terrain = (root / "src/main/java/dev/foucaultleon/flterraforged/engin
 for token in ("double bathymetry", "double shelf", "double deep", "- bathymetry"):
     if token not in configured_terrain:
         errors.append(f"ConfiguredTerrain missing ocean bathymetry guard: {token}")
+for token in ("COASTAL_RELEASE_START", "COASTAL_RELEASE_END", "coastalCeiling"):
+    if token not in configured_terrain:
+        errors.append(f"ConfiguredTerrain missing smooth coastal-height release: {token}")
 if "continentalness < settings.oceanContinentalness() && belowSea" not in terrain_classifier:
     errors.append("TerrainClassifier must require submerged terrain for continental ocean classification")
 if "continentalness < settings.coastContinentalness()" not in terrain_classifier or "&& height <= seaLevel + settings.coastHeightAboveSea()" not in terrain_classifier:
     errors.append("TerrainClassifier must require both shoreline proximity and low elevation for coast")
+if "river.hasWaterSurfaceHeight() && river.depth() >= settings.riverDepth()" not in terrain_classifier:
+    errors.append("TerrainClassifier must not assign RIVER semantics to a dry incision envelope")
 if "targetDepth" not in lake_field or "Math.min(14.0D" not in lake_field:
     errors.append("LakeField must retain deeper basin-core lake shaping")
 for token in ("basinNodeCounts", "basinMinimumDepth", "Maths.lerp(3.50D, 2.50D"):
@@ -166,10 +171,13 @@ for token in ("minimumWaterDepth(river.waterSurfaceHeight())", "Maths.lerp(3.50D
         errors.append(f"RiverModel missing altitude-aware minimum water depth: {token}")
 for token in (
         "MAXIMUM_BED_GRADE = 0.50D",
-        "MAXIMUM_RIDGE_CORRECTION = 2.0D",
+        "MAXIMUM_RIDGE_CORRECTION = 3.0D",
         "desiredWaterDepth(river, wetChannel)",
         "carveableWetChannel",
-        "river.waterSurfaceHeight() - finalHeight"):
+        "river.waterSurfaceHeight() - finalHeight",
+        "nearestSurfaceAligned",
+        "lakeShoreHeight",
+        "riverBankHeight"):
     if token not in river_model:
         errors.append(f"RiverModel missing continuous bounded wet-bed logic: {token}")
 
@@ -192,13 +200,13 @@ river_tests = (root / "src/test/java/dev/foucaultleon/flterraforged/engine/river
 for token in (
         "refinedRiverGradeCannotCreateMultiBlockWaterBreaks",
         "broadLakeBedRemainsContinuousAcrossDrainageGridCells",
-        "residualTerrainRidgeCannotLeaveOneColumnRiverHole",
+        "wetToDryRiverEdgeStaysAtTheWaterline",
         "confluenceCannotCreateAQuantizedBedCliff"):
     if token not in river_tests:
         errors.append(f"Engine hydrology regression test missing: {token}")
 
-if 'VERSION = "0.1.0-SNAPSHOT-r28"' not in provider:
-    errors.append("Default engine provider must report r28")
+if 'VERSION = "0.1.0-SNAPSHOT-r29"' not in provider:
+    errors.append("Default engine provider must report r29")
 
 
 terrain_sampler = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/terrain/region/TerrainRegionSampler.java").read_text(encoding="utf-8")

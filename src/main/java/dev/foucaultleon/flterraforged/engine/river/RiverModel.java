@@ -20,7 +20,13 @@ public final class RiverModel implements CellLookup {
     private static final double WET_CHANNEL_RADIUS = 0.78D;
     private static final double EDGE_WATER_DEPTH = 1.10D;
     private static final double MAXIMUM_BED_GRADE = 0.50D;
-    private static final double MAXIMUM_RIDGE_CORRECTION = 2.0D;
+    private static final double MAXIMUM_RIDGE_CORRECTION = 3.0D;
+    private static final double MINIMUM_BANK_TRANSITION = 8.0D;
+    private static final double MAXIMUM_BANK_FLOW_EXTRA = 4.0D;
+    private static final double BANK_FLOW_SCALE = 0.90D;
+    private static final double MAXIMUM_BANK_GRADE = 0.55D;
+    private static final double MAXIMUM_BANK_RISE_GRADE = 0.45D;
+    private static final double BANK_WATER_GRADE_GUARD = 0.50D;
 
     private final EngineContext world;
     private final CellLookup erodedTerrain;
@@ -96,7 +102,7 @@ public final class RiverModel implements CellLookup {
     public void lookup(int x, int z, Cell target) {
         Objects.requireNonNull(target, "target");
         erodedTerrain.lookup(x, z, target);
-        RiverHit river = nearest(x, z);
+        RiverHit river = nearestSurfaceAligned(x, z, target.heightErosion);
         LakeHit lake = nearestLake(x, z);
 
         double lakeIncision = 0.0D;
@@ -124,6 +130,9 @@ public final class RiverModel implements CellLookup {
 
         target.lake = false;
         target.lakeShore = lake.shore();
+        double baseHeight = lake.shore()
+                ? lakeShoreHeight(lake, target.heightErosion)
+                : target.heightErosion;
         if (!river.present() || (lake.shore() && river.depth() <= 0.05D)) {
             target.riverMask = 1.0D;
             target.riverDistance = lake.shore()
@@ -137,7 +146,7 @@ public final class RiverModel implements CellLookup {
                     ? lake.waterSurfaceHeight()
                     : Double.NaN;
             target.riverFlow = lake.shore() ? 0.0D : Double.NaN;
-            target.height = target.heightErosion;
+            target.height = baseHeight;
             return;
         }
 
@@ -155,19 +164,16 @@ public final class RiverModel implements CellLookup {
             // Lipschitz-continuous: together with the separately grade-limited water surface, two
             // neighboring wet columns cannot become a two-block cliff after integer quantization.
             double desiredBed = river.waterSurfaceHeight() - desiredWaterDepth;
-            double requiredIncision = Math.max(0.0D, target.heightErosion - desiredBed);
+            double requiredIncision = Math.max(0.0D, baseHeight - desiredBed);
             carveableWetChannel = requiredIncision
                     <= settings.maximumDepth() + MAXIMUM_RIDGE_CORRECTION;
-            if (carveableWetChannel) {
-                finalHeight = Math.min(target.heightErosion, desiredBed);
-                localIncision = Math.max(0.0D, target.heightErosion - finalHeight);
-            } else {
-                localIncision = Maths.clamp(river.depth(), 0.0D, settings.maximumDepth());
-                finalHeight = target.heightErosion - localIncision;
-            }
+            finalHeight = carveableWetChannel
+                    ? Math.min(baseHeight, desiredBed)
+                    : riverBankHeight(river, halfWidth, baseHeight);
+            localIncision = Math.max(0.0D, baseHeight - finalHeight);
         } else {
-            localIncision = Maths.clamp(river.depth(), 0.0D, settings.maximumDepth());
-            finalHeight = target.heightErosion - localIncision;
+            finalHeight = riverBankHeight(river, halfWidth, baseHeight);
+            localIncision = Math.max(0.0D, baseHeight - finalHeight);
         }
         finalHeight = Maths.clamp(
                 finalHeight,
@@ -187,6 +193,44 @@ public final class RiverModel implements CellLookup {
                 : Double.NaN;
         target.riverFlow = river.flow();
         target.height = finalHeight;
+    }
+
+    private double lakeShoreHeight(LakeHit lake, double terrainHeight) {
+        double outwardDistance = Math.max(0.0D, -lake.shoreDistance());
+        double alpha = Maths.smooth(Maths.clamp(
+                outwardDistance / LakeField.SHORE_TRANSITION_WIDTH,
+                0.0D,
+                1.0D));
+        return Math.max(
+                lake.waterSurfaceHeight(),
+                Maths.lerp(lake.waterSurfaceHeight(), terrainHeight, alpha));
+    }
+
+    private double riverBankHeight(RiverHit river, double halfWidth, double terrainHeight) {
+        if (!Double.isFinite(river.waterSurfaceHeight())) {
+            return terrainHeight;
+        }
+        double wetRadius = halfWidth * WET_CHANNEL_RADIUS;
+        double fringe = MINIMUM_BANK_TRANSITION
+                + Math.min(
+                        MAXIMUM_BANK_FLOW_EXTRA,
+                        Math.sqrt(Math.max(0.0D, river.flow())) * BANK_FLOW_SCALE);
+        double verticalTransition = Math.abs(terrainHeight - river.waterSurfaceHeight())
+                / MAXIMUM_BANK_GRADE;
+        double transitionWidth = Math.max(
+                halfWidth - wetRadius + fringe,
+                verticalTransition);
+        double bankDistance = Math.max(0.0D, river.distance() - wetRadius);
+        if (bankDistance >= transitionWidth) {
+            return terrainHeight;
+        }
+        double alpha = Maths.smooth(Maths.clamp(bankDistance / transitionWidth, 0.0D, 1.0D));
+        double guardedWaterline = river.waterSurfaceHeight() + BANK_WATER_GRADE_GUARD;
+        double blendedHeight = Math.max(
+                guardedWaterline,
+                Maths.lerp(river.waterSurfaceHeight(), terrainHeight, alpha));
+        double gradeCeiling = guardedWaterline + bankDistance * MAXIMUM_BANK_RISE_GRADE;
+        return Math.min(blendedHeight, gradeCeiling);
     }
 
     private double desiredWaterDepth(RiverHit river, boolean wetChannel) {
@@ -259,9 +303,26 @@ public final class RiverModel implements CellLookup {
      * @return nearest river hit or {@link RiverHit#NONE}
      */
     public RiverHit nearest(int x, int z) {
+        return nearestInternal(x, z, Double.NaN, Double.POSITIVE_INFINITY);
+    }
+
+    private RiverHit nearestSurfaceAligned(int x, int z, double terrainHeight) {
+        return nearestInternal(
+                x,
+                z,
+                terrainHeight,
+                MINIMUM_BANK_TRANSITION + MAXIMUM_BANK_FLOW_EXTRA);
+    }
+
+    private RiverHit nearestInternal(
+            int x,
+            int z,
+            double terrainHeight,
+            double alternativeRange) {
         int regionX = Math.floorDiv(x, settings.regionSize());
         int regionZ = Math.floorDiv(z, settings.regionSize());
-        RiverHit nearest = map(regionX, regionZ).nearest(x, z);
+        RiverHit nearest = nearestInMap(
+                map(regionX, regionZ), x, z, terrainHeight, alternativeRange);
         int localX = Math.floorMod(x, settings.regionSize());
         int localZ = Math.floorMod(z, settings.regionSize());
         double boundaryRange = settings.gridSpacing() * 2.0D + settings.maximumWidth();
@@ -274,13 +335,41 @@ public final class RiverModel implements CellLookup {
                 if (dx == 0 && dz == 0) {
                     continue;
                 }
-                RiverHit candidate = map(regionX + dx, regionZ + dz).nearest(x, z);
-                if (candidate.distance() < nearest.distance()) {
+                RiverHit candidate = nearestInMap(
+                        map(regionX + dx, regionZ + dz),
+                        x,
+                        z,
+                        terrainHeight,
+                        alternativeRange);
+                if (betterHit(candidate, nearest, terrainHeight)) {
                     nearest = candidate;
                 }
             }
         }
         return nearest;
+    }
+
+    private static RiverHit nearestInMap(
+            Rivermap map,
+            int x,
+            int z,
+            double terrainHeight,
+            double alternativeRange) {
+        if (!Double.isFinite(terrainHeight)) {
+            return map.nearest(x, z);
+        }
+        return map.nearestSurfaceAligned(x, z, terrainHeight, alternativeRange);
+    }
+
+    private static boolean betterHit(
+            RiverHit candidate,
+            RiverHit current,
+            double terrainHeight) {
+        if (!Double.isFinite(terrainHeight)) {
+            return candidate.distance() < current.distance();
+        }
+        return candidate.surfaceAlignmentScore(terrainHeight)
+                < current.surfaceAlignmentScore(terrainHeight);
     }
 
     /**

@@ -20,6 +20,9 @@ public record RiverHit(
         double flow,
         boolean lake) {
 
+    private static final double FREE_VERTICAL_ALIGNMENT = 2.0D;
+    private static final double VERTICAL_ALIGNMENT_WEIGHT = 2.0D;
+
     /** Shared marker used when no hydrology feature is present. */
     public static final RiverHit NONE = new RiverHit(
             Double.POSITIVE_INFINITY,
@@ -37,5 +40,25 @@ public record RiverHit(
      */
     public boolean present() {
         return Double.isFinite(distance);
+    }
+
+    /**
+     * Returns a terrain-aware selection score for overlapping projected channels.
+     *
+     * <p>Horizontal distance remains the primary signal near an ordinary channel. A candidate
+     * whose water surface is implausibly far below or above local terrain receives a penalty so it
+     * cannot displace a similarly close surface channel at a two-dimensional crossing.</p>
+     *
+     * @param terrainHeight local pre-hydrology terrain height
+     * @return lower-is-better surface-alignment score
+     */
+    public double surfaceAlignmentScore(double terrainHeight) {
+        if (!present() || !Double.isFinite(terrainHeight) || !Double.isFinite(waterSurfaceHeight)) {
+            return distance;
+        }
+        double verticalMismatch = Math.max(
+                0.0D,
+                Math.abs(terrainHeight - waterSurfaceHeight) - FREE_VERTICAL_ALIGNMENT);
+        return distance + verticalMismatch * VERTICAL_ALIGNMENT_WEIGHT;
     }
 }

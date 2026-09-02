@@ -46,6 +46,41 @@ public record Rivermap(int regionX, int regionZ, List<RiverSegment> segments, La
     }
 
     /**
+     * Finds the nearest channel whose hydraulic surface is vertically reachable from the terrain.
+     *
+     * <p>This prevents a deeply buried, unrelated segment from winning by a fraction of a block at
+     * a projected crossing while a slightly farther surface channel owns the visible bank.</p>
+     *
+     * @param x world X coordinate
+     * @param z world Z coordinate
+     * @param terrainHeight pre-hydrology terrain height
+     * @param alternativeRange maximum extra horizontal search range beyond the geometric winner
+     * @return nearest surface-aligned channel hit or {@link RiverHit#NONE}
+     */
+    public RiverHit nearestSurfaceAligned(
+            double x,
+            double z,
+            double terrainHeight,
+            double alternativeRange) {
+        RiverHit geometricNearest = nearest(x, z);
+        RiverHit nearest = geometricNearest;
+        double maximumDistance = geometricNearest.distance() + alternativeRange;
+        double nearestScore = geometricNearest.surfaceAlignmentScore(terrainHeight);
+        for (RiverSegment segment : segments) {
+            RiverHit candidate = segment.hit(x, z);
+            if (candidate.distance() > maximumDistance) {
+                continue;
+            }
+            double candidateScore = candidate.surfaceAlignmentScore(terrainHeight);
+            if (candidateScore < nearestScore) {
+                nearest = candidate;
+                nearestScore = candidateScore;
+            }
+        }
+        return nearest;
+    }
+
+    /**
      * Samples inland depression water in this map.
      *
      * @param x world X coordinate
