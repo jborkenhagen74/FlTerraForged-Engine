@@ -1,10 +1,9 @@
 package dev.foucaultleon.flterraforged.engine;
 
 import dev.foucaultleon.flterraforged.engine.api.terrain.TerrainSample;
+import dev.foucaultleon.flterraforged.engine.internal.cache.SingleFlightCache;
 import dev.foucaultleon.flterraforged.engine.pipeline.WorldgenPipeline;
 import java.util.Arrays;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -13,18 +12,16 @@ import java.util.Objects;
  * <p>The cache sits above the complete world-generation pipeline, so biome lookup, density shaping,
  * height queries and surface passes can reuse exactly the same final X/Z samples. Completed tiles
  * are immutable and bounded by an access-ordered LRU. Expensive tile generation always happens
- * outside the cache lock. Key-striped generation locks coalesce a cold miss for the same tile
- * while unrelated tiles remain parallel.</p>
+ * outside the cache lock. Exact-key single-flight loading coalesces a cold miss for the same tile
+ * while unrelated tiles remain parallel and cannot collide on arbitrary lock stripes.</p>
  */
 final class WorldSampleCache {
 
     static final int TILE_SIZE = 16;
-    static final int DEFAULT_MAXIMUM_TILES = 256;
-    private static final int GENERATION_LOCK_COUNT = 64;
+    static final int DEFAULT_MAXIMUM_TILES = 1024;
 
     private final WorldgenPipeline pipeline;
-    private final TileCache cache;
-    private final Object[] generationLocks;
+    private final SingleFlightCache<TerrainSampleTile> cache;
 
     WorldSampleCache(WorldgenPipeline pipeline) {
         this(pipeline, DEFAULT_MAXIMUM_TILES);
@@ -35,8 +32,7 @@ final class WorldSampleCache {
         if (maximumTiles < 1) {
             throw new IllegalArgumentException("maximumTiles must be >= 1");
         }
-        this.cache = new TileCache(maximumTiles);
-        this.generationLocks = createGenerationLocks();
+        this.cache = new SingleFlightCache<>("final terrain tile", maximumTiles);
     }
 
     TerrainSample sample(int x, int z) {
@@ -44,36 +40,16 @@ final class WorldSampleCache {
         int tileZ = Math.floorDiv(z, TILE_SIZE);
         long key = key(tileX, tileZ);
 
-        TerrainSampleTile tile;
-        synchronized (cache) {
-            tile = cache.get(key);
-        }
-        if (tile == null) {
-            synchronized (generationLock(key)) {
-                synchronized (cache) {
-                    tile = cache.get(key);
-                }
-                if (tile == null) {
-                    tile = generate(tileX, tileZ);
-                    synchronized (cache) {
-                        cache.put(key, tile);
-                    }
-                }
-            }
-        }
+        TerrainSampleTile tile = cache.get(key, ignored -> generate(tileX, tileZ));
         return tile.sample(x, z);
     }
 
     void clear() {
-        synchronized (cache) {
-            cache.clear();
-        }
+        cache.clear();
     }
 
     int cachedTiles() {
-        synchronized (cache) {
-            return cache.size();
-        }
+        return cache.size();
     }
 
     private TerrainSampleTile generate(int tileX, int tileZ) {
@@ -85,17 +61,6 @@ final class WorldSampleCache {
 
     private static long key(int x, int z) {
         return (((long) x) << 32) ^ (z & 0xFFFFFFFFL);
-    }
-
-    private Object generationLock(long key) {
-        int index = (int) (key ^ (key >>> 32)) & (GENERATION_LOCK_COUNT - 1);
-        return generationLocks[index];
-    }
-
-    private static Object[] createGenerationLocks() {
-        Object[] locks = new Object[GENERATION_LOCK_COUNT];
-        Arrays.setAll(locks, ignored -> new Object());
-        return locks;
     }
 
     private static final class TerrainSampleTile {
@@ -126,19 +91,4 @@ final class WorldSampleCache {
         }
     }
 
-    private static final class TileCache extends LinkedHashMap<Long, TerrainSampleTile> {
-
-        private static final long serialVersionUID = 1L;
-        private final int maximumSize;
-
-        TileCache(int maximumSize) {
-            super(maximumSize + 1, 0.75F, true);
-            this.maximumSize = maximumSize;
-        }
-
-        @Override
-        protected boolean removeEldestEntry(Map.Entry<Long, TerrainSampleTile> eldest) {
-            return size() > maximumSize;
-        }
-    }
 }

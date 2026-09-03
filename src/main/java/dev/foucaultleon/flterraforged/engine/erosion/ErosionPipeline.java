@@ -3,9 +3,7 @@ package dev.foucaultleon.flterraforged.engine.erosion;
 import dev.foucaultleon.flterraforged.engine.api.EngineContext;
 import dev.foucaultleon.flterraforged.engine.cell.Cell;
 import dev.foucaultleon.flterraforged.engine.cell.CellLookup;
-import java.util.Arrays;
-import java.util.LinkedHashMap;
-import java.util.Map;
+import dev.foucaultleon.flterraforged.engine.internal.cache.SingleFlightCache;
 import java.util.Objects;
 
 /**
@@ -13,19 +11,16 @@ import java.util.Objects;
  *
  * <p>The stage keeps a bounded shared cache containing only immutable completed erosion regions.
  * Cache lookup/insertion is synchronized, while expensive region generation always happens outside
- * the cache lock. Key-striped generation locks coalesce concurrent misses for the same region
+ * the cache lock. Exact-key single-flight loading coalesces concurrent misses for the same region
  * without serializing independent regions or introducing recursive {@code computeIfAbsent}-style
  * wait graphs.</p>
  */
 public final class ErosionPipeline implements CellLookup {
 
-    private static final int GENERATION_LOCK_COUNT = 64;
-
     private final CellLookup baseTerrain;
     private final ErosionSettings settings;
     private final ErosionTileGenerator generator;
-    private final TileCache cache;
-    private final Object[] generationLocks;
+    private final SingleFlightCache<ErosionTile> cache;
 
     /**
      * Creates an erosion pipeline.
@@ -39,8 +34,7 @@ public final class ErosionPipeline implements CellLookup {
         this.baseTerrain = Objects.requireNonNull(baseTerrain, "baseTerrain");
         this.settings = Objects.requireNonNull(settings, "settings");
         this.generator = new ErosionTileGenerator(seed, Objects.requireNonNull(world, "world"), baseTerrain, settings);
-        this.cache = new TileCache(settings.cacheSize());
-        this.generationLocks = createGenerationLocks();
+        this.cache = new SingleFlightCache<>("erosion region", settings.cacheSize());
     }
 
     /** {@inheritDoc} */
@@ -68,50 +62,7 @@ public final class ErosionPipeline implements CellLookup {
         int regionX = Math.floorDiv(x, settings.regionSize());
         int regionZ = Math.floorDiv(z, settings.regionSize());
         long key = (((long) regionX) << 32) ^ (regionZ & 0xFFFFFFFFL);
-        ErosionTile tile;
-        synchronized (cache) {
-            tile = cache.get(key);
-        }
-        if (tile == null) {
-            synchronized (generationLock(key)) {
-                synchronized (cache) {
-                    tile = cache.get(key);
-                }
-                if (tile == null) {
-                    tile = generator.generate(regionX, regionZ);
-                    synchronized (cache) {
-                        cache.put(key, tile);
-                    }
-                }
-            }
-        }
+        ErosionTile tile = cache.get(key, ignored -> generator.generate(regionX, regionZ));
         return tile.sample(x, z, settings.maximumHeightChange());
-    }
-
-    private Object generationLock(long key) {
-        int index = (int) (key ^ (key >>> 32)) & (GENERATION_LOCK_COUNT - 1);
-        return generationLocks[index];
-    }
-
-    private static Object[] createGenerationLocks() {
-        Object[] locks = new Object[GENERATION_LOCK_COUNT];
-        Arrays.setAll(locks, ignored -> new Object());
-        return locks;
-    }
-
-    private static final class TileCache extends LinkedHashMap<Long, ErosionTile> {
-
-        private static final long serialVersionUID = 1L;
-        private final int maximumSize;
-
-        TileCache(int maximumSize) {
-            super(maximumSize + 1, 0.75F, true);
-            this.maximumSize = maximumSize;
-        }
-
-        @Override
-        protected boolean removeEldestEntry(Map.Entry<Long, ErosionTile> eldest) {
-            return size() > maximumSize;
-        }
     }
 }

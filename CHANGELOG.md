@@ -1,3 +1,19 @@
+## 0.1.0-SNAPSHOT-r31
+
+- Replace coarse key-striped generation monitors with an exact-key `SingleFlightCache`: one caller
+  owns each cold dataset load and all concurrent callers receive that same immutable result.
+- Make waiters interruptible, propagate the owner's failure, remove failed flights for retry and
+  fail recursive same-cache misses immediately instead of permitting an opaque wait cycle.
+- Increase the final terrain working set from 256 to 1024 chunk tiles, erosion regions from 64 to
+  256 and river maps from 32 to 64 so Minecraft's adjacent generation stages do not immediately
+  evict and regenerate the spawn area.
+- Add a cached conservative marine-depth fast path that uses base terrain and the maximum upward
+  erosion bound instead of starting complete hydrology generation during structure placement.
+- Add exact-key, independent-key, retry, recursion, bounded-LRU, spawn-working-set and conservative
+  marine regression tests.
+- Preserve r29/r30 terrain, hydrology, shoreline and climate output for complete terrain samples.
+- Report provider version `0.1.0-SNAPSHOT-r31`.
+
 ## 0.1.0-SNAPSHOT-r30
 
 - Coalesce concurrent cold misses for the same final-sample tile, erosion region and river map with

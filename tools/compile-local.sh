@@ -42,7 +42,7 @@ public final class Smoke {
         if (settings.climateLayout() != ClimateLayout.RANDOMIZED) {
             throw new IllegalStateException("central_europe must default to randomized climate");
         }
-        if (!DefaultEngineProvider.VERSION.endsWith("-r30")) {
+        if (!DefaultEngineProvider.VERSION.endsWith("-r31")) {
             throw new IllegalStateException("unexpected provider revision");
         }
     }

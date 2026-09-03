@@ -1,5 +1,19 @@
 # FlTerraForged Engine
 
+## r31: exact-key single-flight cache
+
+r31 replaces the r30 stripe monitors with an exact-key in-flight registry. One worker owns a cold
+terrain tile, erosion region or river map; every concurrent caller for that key waits interruptibly
+for and receives the same immutable object. Unrelated keys do not collide merely because their
+hashes share a stripe. Recursive same-cache loads fail with a diagnostic instead of forming an
+unbounded wait. The completed working sets now retain 1024 terrain tiles, 256 erosion regions and
+64 river maps, covering Minecraft's spawn-stage revisits without immediate LRU churn.
+
+The Engine API 0.1.1 default-adds a conservative marine-depth query. The default Engine overrides
+it with a lightweight base-terrain calculation and a separate exact-key point cache, so a structure
+guard no longer initializes full erosion, rivers, lakes or a 16×16 final tile merely to reject an
+inland candidate.
+
 ## r30: bounded parallel cold-cache generation
 
 r30 preserves the r29 world shape but prevents parallel chunk workers from calculating the same
@@ -147,8 +161,8 @@ dev.foucaultleon:flterraforged-engine:0.1.0-SNAPSHOT
 
 ## Current implementation
 
-`0.1.0-SNAPSHOT-r30` combines the migrated foundations into one coordinated pipeline, retains the
-r29 terrain output and coalesces simultaneous cold-cache work. The implementation includes
+`0.1.0-SNAPSHOT-r31` combines the migrated foundations into one coordinated pipeline, retains the
+r29 terrain output and shares simultaneous cold-cache work by exact key. The implementation includes
 configurable terrain-region weights plus randomized/north-south macro-climate layouts:
 
 1. **Noise** — seed-aware modular scalar fields, interpolation, gradient/value

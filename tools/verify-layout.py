@@ -205,23 +205,62 @@ for token in (
     if token not in river_tests:
         errors.append(f"Engine hydrology regression test missing: {token}")
 
-if 'VERSION = "0.1.0-SNAPSHOT-r30"' not in provider:
-    errors.append("Default engine provider must report r30")
+if 'VERSION = "0.1.0-SNAPSHOT-r31"' not in provider:
+    errors.append("Default engine provider must report r31")
 
 world_sample_cache = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/WorldSampleCache.java").read_text(encoding="utf-8")
 erosion_pipeline = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/erosion/ErosionPipeline.java").read_text(encoding="utf-8")
+single_flight_cache_path = root / "src/main/java/dev/foucaultleon/flterraforged/engine/internal/cache/SingleFlightCache.java"
+if not single_flight_cache_path.is_file():
+    errors.append("Engine exact-key SingleFlightCache is missing")
+    single_flight_cache = ""
+else:
+    single_flight_cache = single_flight_cache_path.read_text(encoding="utf-8")
+for token in (
+        "ConcurrentMap<Long, CompletableFuture<V>> inFlight",
+        "inFlight.putIfAbsent(key, owned)",
+        "return shared.get()",
+        "Thread.currentThread().interrupt()",
+        "Recursive miss in",
+        "inFlight.remove(key, owned)"):
+    if token not in single_flight_cache:
+        errors.append(f"SingleFlightCache missing exact-key/deadlock safety: {token}")
 for cache_source, label in (
         (world_sample_cache, "final sample tile"),
         (erosion_pipeline, "erosion region"),
         (river_model, "river map")):
-    for token in ("GENERATION_LOCK_COUNT", "synchronized (generationLock(key))", "tile = cache.get(key)"):
-        adjusted = "map = cache.get(key)" if label == "river map" and token == "tile = cache.get(key)" else token
-        if adjusted not in cache_source:
-            errors.append(f"Engine {label} cache missing cold-miss coalescing: {adjusted}")
+    if "SingleFlightCache<" not in cache_source or "cache.get(key," not in cache_source:
+        errors.append(f"Engine {label} cache does not use exact-key single-flight loading")
+    for forbidden in ("GENERATION_LOCK_COUNT", "generationLocks", "synchronized (generationLock(key))"):
+        if forbidden in cache_source:
+            errors.append(f"Engine {label} cache retained obsolete stripe locking: {forbidden}")
+
+if "DEFAULT_MAXIMUM_TILES = 1024" not in world_sample_cache:
+    errors.append("Final sample cache must retain the complete spawn-stage working set")
+if "256);" not in (root / "src/main/java/dev/foucaultleon/flterraforged/engine/erosion/ErosionSettings.java").read_text(encoding="utf-8"):
+    errors.append("Default erosion cache must retain 256 completed regions")
+if "64);" not in (root / "src/main/java/dev/foucaultleon/flterraforged/engine/river/RiverSettings.java").read_text(encoding="utf-8"):
+    errors.append("Default river cache must retain 64 completed maps")
+
+default_world = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/DefaultTerrainWorld.java").read_text(encoding="utf-8")
+pipeline = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/pipeline/WorldgenPipeline.java").read_text(encoding="utf-8")
+for token in ("marineDepthCache", "pipeline.conservativeMarineDepth(x, z)"):
+    if token not in default_world:
+        errors.append(f"Default terrain world missing lightweight marine cache: {token}")
+for token in ("conservativeMarineDepth", "maximumErosionRise", "baseTerrain.lookup(x, z)"):
+    if token not in pipeline:
+        errors.append(f"WorldgenPipeline missing conservative marine fast path: {token}")
 
 engine_smoke_tests = (root / "src/test/java/dev/foucaultleon/flterraforged/engine/EngineSmokeTest.java").read_text(encoding="utf-8")
-if "concurrentColdSamplingCoalescesOneTileInstance" not in engine_smoke_tests:
-    errors.append("Engine cold-cache concurrency regression test is missing")
+for test_name in (
+        "concurrentColdSamplingCoalescesOneTileInstance",
+        "conservativeMarineFastPathNeverApprovesInlandOrShallowTerrain",
+        "spawnSizedWorkingSetSurvivesTheNextGenerationStage"):
+    if test_name not in engine_smoke_tests:
+        errors.append(f"Engine cache/marine regression test is missing: {test_name}")
+single_flight_tests = root / "src/test/java/dev/foucaultleon/flterraforged/engine/internal/cache/SingleFlightCacheTest.java"
+if not single_flight_tests.is_file():
+    errors.append("SingleFlightCache concurrency regression tests are missing")
 
 
 terrain_sampler = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/terrain/region/TerrainRegionSampler.java").read_text(encoding="utf-8")

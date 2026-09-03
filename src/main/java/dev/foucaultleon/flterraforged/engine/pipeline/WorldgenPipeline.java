@@ -54,10 +54,13 @@ public final class WorldgenPipeline implements CellLookup {
     private static final long CLIMATE_REGION_SEED = 0xC6BC279692B5C323L;
 
     private final EngineContext context;
+    private final CellLookup baseTerrain;
     private final TerrainModel terrain;
     private final RiverModel river;
     private final ClimateModel climate;
     private final TerrainClassifier classifier;
+    private final TerrainClassificationSettings classificationSettings;
+    private final double maximumErosionRise;
 
     /**
      * Creates and coordinates every world-generation stage for one world.
@@ -98,6 +101,7 @@ public final class WorldgenPipeline implements CellLookup {
                 settings.terrainBlendWidth());
 
         CellLookup baseLookup = (x, z, target) -> baseTerrain.populate(target, x, z);
+        this.baseTerrain = baseLookup;
         ErosionPipeline erosion = new ErosionPipeline(
                 seed ^ EROSION_SEED,
                 context,
@@ -134,7 +138,9 @@ public final class WorldgenPipeline implements CellLookup {
                 moistureNoise,
                 climateRegions,
                 climateSettings);
-        this.classifier = new TerrainClassifier(TerrainClassificationSettings.from(settings));
+        this.classificationSettings = TerrainClassificationSettings.from(settings);
+        this.classifier = new TerrainClassifier(classificationSettings);
+        this.maximumErosionRise = settings.erosionMaxDelta();
     }
 
     /** {@inheritDoc} */
@@ -237,6 +243,31 @@ public final class WorldgenPipeline implements CellLookup {
      */
     public double surfaceHeight(int x, int z) {
         return terrain.surfaceHeight(x, z);
+    }
+
+    /**
+     * Returns conservatively available marine depth using only the lightweight base-terrain path.
+     *
+     * <p>The maximum configured upward erosion delta is included before applying the normal ocean
+     * thresholds, so this fast structure-placement query may reject a marginal ocean candidate but
+     * cannot approve an inland river, lake, puddle or shallow coast merely to avoid the full
+     * hydrology pipeline.</p>
+     *
+     * @param x world X coordinate
+     * @param z world Z coordinate
+     * @return conservatively available marine depth, or zero for non-marine terrain
+     */
+    public double conservativeMarineDepth(int x, int z) {
+        Cell cell = baseTerrain.lookup(x, z);
+        double surface = cell.height + maximumErosionRise;
+        double continentalness = cell.continentEdge * 2.0D - 1.0D;
+        boolean belowSea = surface < context.seaLevel() - 1.50D;
+        boolean oceanward = continentalness < classificationSettings.coastContinentalness();
+        boolean deepEnough = surface
+                < context.seaLevel() - classificationSettings.oceanDepthBelowSea();
+        boolean marine = (deepEnough && oceanward)
+                || (continentalness < classificationSettings.oceanContinentalness() && belowSea);
+        return marine ? Math.max(0.0D, context.seaLevel() - surface) : 0.0D;
     }
 
     private TerrainSample toTerrainSample(Cell center) {

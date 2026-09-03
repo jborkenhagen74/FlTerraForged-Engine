@@ -11,9 +11,11 @@ import dev.foucaultleon.flterraforged.engine.api.EngineContext;
 import dev.foucaultleon.flterraforged.engine.api.EngineProvider;
 import dev.foucaultleon.flterraforged.engine.api.TerrainEngine;
 import dev.foucaultleon.flterraforged.engine.api.TerrainWorld;
+import dev.foucaultleon.flterraforged.engine.api.terrain.StandardTerrainTypes;
 import dev.foucaultleon.flterraforged.engine.api.terrain.TerrainSample;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.ServiceLoader;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
@@ -135,6 +137,51 @@ public final class EngineSmokeTest {
                 start.countDown();
                 executor.shutdownNow();
             }
+        }
+    }
+
+    @Test
+    void conservativeMarineFastPathNeverApprovesInlandOrShallowTerrain() {
+        EngineConfig config = EngineConfig.of(Map.of("preset", "central_europe"));
+        try (TerrainEngine engine = new DefaultEngineProvider().create(config);
+             TerrainWorld world = engine.openWorld(new EngineContext(8675309L, -64, 320, 63))) {
+            for (int z = -4; z <= 4; z++) {
+                for (int x = -4; x <= 4; x++) {
+                    int blockX = x * 32 + 8;
+                    int blockZ = z * 32 + 8;
+                    if (!world.isMarine(blockX, blockZ, 5.0D)) {
+                        continue;
+                    }
+                    TerrainSample sample = world.sample(blockX, blockZ);
+                    assertTrue(
+                            StandardTerrainTypes.OCEAN.equals(sample.terrainType())
+                                    || StandardTerrainTypes.COAST.equals(sample.terrainType()),
+                            "Fast marine path approved non-marine terrain at "
+                                    + blockX + "," + blockZ);
+                    assertTrue(
+                            world.context().seaLevel() - sample.surfaceHeight() >= 5.0D,
+                            "Fast marine path approved shallow terrain at "
+                                    + blockX + "," + blockZ);
+                }
+            }
+        }
+    }
+
+    @Test
+    void spawnSizedWorkingSetSurvivesTheNextGenerationStage() {
+        try (TerrainEngine engine = new DefaultEngineProvider().create(EngineConfig.empty());
+             TerrainWorld world = engine.openWorld(new EngineContext(135792468L, -64, 320, 63))) {
+            TerrainSample first = null;
+            for (int chunkZ = -8; chunkZ <= 8; chunkZ++) {
+                for (int chunkX = -8; chunkX <= 8; chunkX++) {
+                    TerrainSample sample = world.sample(chunkX * 16 + 8, chunkZ * 16 + 8);
+                    if (first == null) {
+                        first = sample;
+                    }
+                }
+            }
+            assertSame(first, world.sample(-8 * 16 + 8, -8 * 16 + 8),
+                    "A 17x17 spawn working set must not be evicted between chunk stages");
         }
     }
 
