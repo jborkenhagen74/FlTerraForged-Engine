@@ -7,8 +7,7 @@ import java.util.Objects;
  * Immutable parameters for deterministic terrain erosion.
  *
  * <p>The default model uses a padded region, globally aligned droplet launch points and a final
- * thermal-relaxation pass. Only immutable completed regions are retained in the shared bounded
- * world cache.</p>
+ * thermal-relaxation pass. Only immutable completed regions are cached per sampling thread.</p>
  *
  * @param regionSize width and depth of the erosion core region in blocks
  * @param border padding around each region in blocks
@@ -121,7 +120,7 @@ public record ErosionSettings(
                 settings.thermalErosionStrength(),
                 1.35D,
                 settings.erosionMaxDelta(),
-                256);
+                64);
     }
 
     private static void unit(double value, String name) {

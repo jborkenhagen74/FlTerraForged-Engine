@@ -260,21 +260,13 @@ ask the same X/Z column repeatedly while selecting biomes, reshaping density, an
 queries and repairing the final surface; all of those consumers now receive the same immutable
 `TerrainSample` object from a chunk-aligned 16x16 tile.
 
-The cache retains at most 1024 completed tiles with access-order LRU eviction, enough for a normal
-spawn working set to survive the transition between Minecraft chunk stages. Cache lookup and
-insertion use short synchronized sections only; generation never runs under that monitor. Since
-r31, `SingleFlightCache` installs one exact-key future before a cold load. One worker computes the
-immutable dataset, same-key callers wait interruptibly for that object, and unrelated keys remain
-parallel without stripe collisions. Failed loads are removed for retry. A recursive miss in the
-same cache is rejected explicitly instead of being allowed to form a future wait cycle.
-
-The dependency direction is deliberately acyclic: final tile generation may request erosion
-regions and river maps, while those generators use only lower base-terrain/climate stages and never
-call the final tile cache. Erosion retains 256 completed regions and hydrology retains 64 completed
-river maps. The separate conservative marine-depth cache holds lightweight point results and never
-enters erosion or hydrology.
+The cache retains at most 256 completed tiles with access-order LRU eviction. Cache lookup and
+insertion use short synchronized sections only. Tile generation never runs under the cache lock,
+and the design intentionally avoids recursive `computeIfAbsent`/future wait graphs. A racing
+duplicate tile may be computed, but only one immutable result is retained.
 
 `WorldgenPipeline.sampleTile(...)` also shares a one-block border while deriving gradients. For a
 16x16 core, point-by-point sampling would run one full climate/hydrology lookup plus four separate
 post-river height lookups for each of 256 columns (1280 hydrology-bearing lookups). Bulk sampling
 evaluates an 18x18 cell field once (324 lookups) and derives all 256 slopes from that field.
+

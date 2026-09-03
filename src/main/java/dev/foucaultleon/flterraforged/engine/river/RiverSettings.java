@@ -140,7 +140,7 @@ public record RiverSettings(
                 7,
                 0.85D,
                 1.35D,
-                64);
+                32);
     }
 
     private static int clampMultiple(int value, int min, int max, int multiple) {
