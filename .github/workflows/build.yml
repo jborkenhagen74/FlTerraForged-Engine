@@ -37,6 +37,59 @@ jobs:
       - name: Build and test against public Engine API Maven repository
         run: gradle --no-daemon --refresh-dependencies clean check
 
+      - name: Collect Engine JAR
+        id: collect_engine
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mapfile -t jars < <(
+            find build/libs -maxdepth 1 -type f -name '*.jar' \
+              ! -name '*-sources.jar' \
+              ! -name '*-javadoc.jar' \
+              -print | sort
+          )
+
+          if [ "${#jars[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one Engine runtime JAR in build/libs, found ${#jars[@]}."
+            if [ "${#jars[@]}" -gt 0 ]; then
+              printf 'Candidate: %s\n' "${jars[@]}"
+            fi
+            exit 1
+          fi
+
+          mkdir -p build/artifacts
+          short_sha="${GITHUB_SHA:0:7}"
+          artifact_path="build/artifacts/FlTerraForged-Engine-R32-${short_sha}.jar"
+          cp "${jars[0]}" "$artifact_path"
+
+          echo "artifact_path=$artifact_path" >> "$GITHUB_OUTPUT"
+          echo "jar_name=$(basename "$artifact_path")" >> "$GITHUB_OUTPUT"
+
+      - name: Upload Engine JAR
+        id: upload_engine
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          path: ${{ steps.collect_engine.outputs.artifact_path }}
+          archive: false
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Add Engine artifact link to job summary
+        shell: bash
+        env:
+          ARTIFACT_URL: ${{ steps.upload_engine.outputs.artifact-url }}
+          ARTIFACT_DIGEST: ${{ steps.upload_engine.outputs.artifact-digest }}
+          JAR_NAME: ${{ steps.collect_engine.outputs.jar_name }}
+        run: |
+          {
+            echo "### FlTerraForged Engine R32 artifact"
+            echo
+            echo "- JAR: \`$JAR_NAME\`"
+            echo "- SHA-256: \`$ARTIFACT_DIGEST\`"
+            echo "- [Download artifact]($ARTIFACT_URL)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   publish-engine-snapshot:
     name: Publish Engine Snapshot
     if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
