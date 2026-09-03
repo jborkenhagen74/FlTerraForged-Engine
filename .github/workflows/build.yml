@@ -59,7 +59,7 @@ jobs:
         if: github.ref == 'refs/heads/revision/r34-lightweight-structure-environment'
         env:
           FLTERRAFORGED_API_LOCAL_REPOSITORY: ${{ github.workspace }}/.ci/flterraforged-r43/build/maven-repository
-        run: gradle -Dorg.gradle.java.installations.paths="$FLTERRAFORGED_JAVA17_HOME,$JAVA_HOME" --no-daemon --refresh-dependencies --warning-mode all clean check
+        run: gradle -Dorg.gradle.java.installations.paths="$FLTERRAFORGED_JAVA17_HOME,$JAVA_HOME" --no-daemon --refresh-dependencies --warning-mode all clean check jar
 
       - name: Build and test against public Engine API Maven repository
         if: github.ref != 'refs/heads/revision/r34-lightweight-structure-environment'
