@@ -34,8 +34,8 @@ jobs:
       - name: Verify layout
         run: python3 tools/verify-layout.py
 
-      - name: Build and test against public Engine API Maven repository
-        run: gradle --no-daemon --refresh-dependencies clean check
+      - name: Build, test and create runtime JAR against public Engine API Maven repository
+        run: gradle --no-daemon --refresh-dependencies clean check jar
 
       - name: Collect Engine JAR
         id: collect_engine
