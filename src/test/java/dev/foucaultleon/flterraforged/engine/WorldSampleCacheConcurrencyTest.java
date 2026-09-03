@@ -1,6 +1,6 @@
 package dev.foucaultleon.flterraforged.engine;
 
-import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.foucaultleon.flterraforged.engine.api.EngineConfig;
@@ -20,9 +20,13 @@ import org.junit.jupiter.api.Test;
 /** Regression tests for parallel cold-cache sampling. */
 public final class WorldSampleCacheConcurrencyTest {
 
-    /** Ensures one cold final-sample tile is materialized once and shared by all concurrent callers. */
+    /**
+     * Ensures concurrent cold callers remain live and deterministic without waiting for cache ownership.
+     *
+     * @throws Exception when a worker cannot complete within the liveness timeout
+     */
     @Test
-    void concurrentColdSamplingReturnsOneCachedSampleInstance() throws Exception {
+    void concurrentColdSamplingRemainsLiveAndDeterministic() throws Exception {
         try (TerrainEngine engine = new DefaultEngineProvider().create(EngineConfig.empty());
                 TerrainWorld world = engine.openWorld(new EngineContext(246813579L, -64, 320, 63))) {
             int workerCount = 8;
@@ -46,10 +50,10 @@ public final class WorldSampleCacheConcurrencyTest {
 
                 TerrainSample first = futures.get(0).get(60, TimeUnit.SECONDS);
                 for (Future<TerrainSample> future : futures) {
-                    assertSame(
+                    assertEquals(
                             first,
                             future.get(60, TimeUnit.SECONDS),
-                            "Concurrent cold misses must reuse the same cached sample instance");
+                            "Concurrent cold misses must remain deterministic");
                 }
             } finally {
                 start.countDown();
