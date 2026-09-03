@@ -2,6 +2,7 @@ package dev.foucaultleon.flterraforged.engine;
 
 import dev.foucaultleon.flterraforged.engine.api.EngineContext;
 import dev.foucaultleon.flterraforged.engine.api.TerrainWorld;
+import dev.foucaultleon.flterraforged.engine.api.terrain.TerrainEnvironmentSample;
 import dev.foucaultleon.flterraforged.engine.api.terrain.TerrainSample;
 import dev.foucaultleon.flterraforged.engine.pipeline.WorldgenPipeline;
 import java.util.Objects;
@@ -35,6 +36,18 @@ public final class DefaultTerrainWorld implements TerrainWorld {
     @Override
     public TerrainSample sample(int x, int z) {
         return sampleCache.sample(x, z);
+    }
+
+    /**
+     * Returns the lightweight placement environment without entering the final-sample tile cache.
+     *
+     * @param x world X coordinate
+     * @param z world Z coordinate
+     * @return lightweight terrain and hydrology sample
+     */
+    @Override
+    public TerrainEnvironmentSample environment(int x, int z) {
+        return pipeline.environment(x, z);
     }
 
     /** Releases world-scoped cached terrain tiles. */
