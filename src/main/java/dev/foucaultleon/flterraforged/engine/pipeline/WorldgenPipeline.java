@@ -4,6 +4,8 @@ import dev.foucaultleon.flterraforged.engine.EngineSettings;
 import dev.foucaultleon.flterraforged.engine.api.EngineContext;
 import dev.foucaultleon.flterraforged.engine.api.climate.ClimateSample;
 import dev.foucaultleon.flterraforged.engine.api.river.RiverSample;
+import dev.foucaultleon.flterraforged.engine.api.terrain.StandardTerrainTypes;
+import dev.foucaultleon.flterraforged.engine.api.terrain.TerrainEnvironmentSample;
 import dev.foucaultleon.flterraforged.engine.api.terrain.TerrainSample;
 import dev.foucaultleon.flterraforged.engine.api.terrain.TerrainType;
 import dev.foucaultleon.flterraforged.engine.cell.Cell;
@@ -182,6 +184,54 @@ public final class WorldgenPipeline implements CellLookup {
      */
     public TerrainSample sample(int x, int z) {
         return toTerrainSample(sampleCell(x, z));
+    }
+
+    /**
+     * Produces a placement-time terrain/hydrology sample without final climate or gradient work.
+     *
+     * <p>The method performs one post-erosion river/lake lookup and final semantic classification.
+     * It intentionally does not call {@link #sampleCell(int, int)}, {@link ClimateModel#lookup(int,
+     * int, Cell)} on the final climate model, or the four neighboring surface lookups needed for
+     * local gradient. Ocean/coast/river/lake classification occurs before the slope-dependent land
+     * fallback, so a zero slope is sufficient for the placement semantics returned here.</p>
+     *
+     * @param x world X coordinate
+     * @param z world Z coordinate
+     * @return lightweight environment sample
+     */
+    public TerrainEnvironmentSample environment(int x, int z) {
+        Cell center = new Cell();
+        river.lookup(x, z, center);
+        double continentalness = center.continentEdge * 2.0D - 1.0D;
+        RiverSample riverSample = new RiverSample(
+                center.riverDistance,
+                center.riverWidth,
+                center.riverDepth,
+                center.riverWaterSurfaceHeight,
+                center.riverFlow);
+        TerrainType type = classifier.classify(
+                center.terrain,
+                center.height,
+                context.seaLevel(),
+                0.0D,
+                continentalness,
+                riverSample,
+                center.lake,
+                center.lakeShore);
+
+        double waterSurface = Double.NaN;
+        if ((StandardTerrainTypes.OCEAN.equals(type)
+                        || StandardTerrainTypes.COAST.equals(type))
+                && center.height < context.seaLevel()) {
+            waterSurface = context.seaLevel();
+        }
+        if (riverSample.hasWaterSurfaceHeight()
+                && riverSample.waterSurfaceHeight() > center.height) {
+            waterSurface = Double.isFinite(waterSurface)
+                    ? Math.max(waterSurface, riverSample.waterSurfaceHeight())
+                    : riverSample.waterSurfaceHeight();
+        }
+        return new TerrainEnvironmentSample(center.height, waterSurface, type);
     }
 
     /**
