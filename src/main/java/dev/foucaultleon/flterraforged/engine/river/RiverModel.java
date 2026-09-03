@@ -5,7 +5,6 @@ import dev.foucaultleon.flterraforged.engine.api.river.RiverSample;
 import dev.foucaultleon.flterraforged.engine.cell.Cell;
 import dev.foucaultleon.flterraforged.engine.cell.CellLookup;
 import dev.foucaultleon.flterraforged.engine.internal.Maths;
-import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -18,7 +17,6 @@ import java.util.Objects;
  */
 public final class RiverModel implements CellLookup {
 
-    private static final int GENERATION_LOCK_COUNT = 64;
     private static final double WET_CHANNEL_RADIUS = 0.78D;
     private static final double EDGE_WATER_DEPTH = 1.10D;
     private static final double MAXIMUM_BED_GRADE = 0.50D;
@@ -35,7 +33,6 @@ public final class RiverModel implements CellLookup {
     private final RiverSettings settings;
     private final RivermapGenerator generator;
     private final MapCache cache;
-    private final Object[] generationLocks;
 
     /**
      * Creates a river model.
@@ -86,7 +83,6 @@ public final class RiverModel implements CellLookup {
                 drainageClimate,
                 settings);
         this.cache = new MapCache(settings.cacheSize());
-        this.generationLocks = createGenerationLocks();
     }
 
     /**
@@ -390,30 +386,18 @@ public final class RiverModel implements CellLookup {
             map = cache.get(key);
         }
         if (map == null) {
-            synchronized (generationLock(key)) {
-                synchronized (cache) {
-                    map = cache.get(key);
-                }
-                if (map == null) {
-                    map = generator.generate(regionX, regionZ);
-                    synchronized (cache) {
-                        cache.put(key, map);
-                    }
+            Rivermap generated = generator.generate(regionX, regionZ);
+            synchronized (cache) {
+                Rivermap existing = cache.get(key);
+                if (existing == null) {
+                    cache.put(key, generated);
+                    map = generated;
+                } else {
+                    map = existing;
                 }
             }
         }
         return map;
-    }
-
-    private Object generationLock(long key) {
-        int index = (int) (key ^ (key >>> 32)) & (GENERATION_LOCK_COUNT - 1);
-        return generationLocks[index];
-    }
-
-    private static Object[] createGenerationLocks() {
-        Object[] locks = new Object[GENERATION_LOCK_COUNT];
-        Arrays.setAll(locks, ignored -> new Object());
-        return locks;
     }
 
     private LakeHit nearestLake(int x, int z) {
