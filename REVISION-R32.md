@@ -23,6 +23,12 @@ This removes the previous generate-then-discard amplification in which several w
 
 The bounded erosion-region cache uses small key-striped generation locks. A missing erosion region is rechecked after acquiring its stripe and is generated once while unrelated stripes remain parallel. The completed LRU lock is held only for lookup and insertion.
 
+## River-map cache
+
+The bounded `RiverModel` map cache uses the same key-striped cold-miss rule. Neighboring final-sample tiles frequently query the same drainage region; only the first worker for that region now executes `RivermapGenerator.generate(...)`, while other workers reuse the completed immutable map. Unrelated stripes remain parallel and the LRU monitor is held only for lookup/insertion.
+
+Together, final terrain tiles, erosion regions and river maps no longer use the previous generate-then-discard pattern for identical concurrent misses.
+
 ## Layering rule
 
 A cache loader in R32 must remain lower-level and deterministic. In particular it must not:
