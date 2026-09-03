@@ -205,8 +205,8 @@ for token in (
     if token not in river_tests:
         errors.append(f"Engine hydrology regression test missing: {token}")
 
-if 'VERSION = "0.1.0-SNAPSHOT-r32"' not in provider:
-    errors.append("Default engine provider must report r32")
+if 'VERSION = "0.1.0-SNAPSHOT-r33"' not in provider:
+    errors.append("Default engine provider must report r33")
 
 
 terrain_sampler = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/terrain/region/TerrainRegionSampler.java").read_text(encoding="utf-8")
