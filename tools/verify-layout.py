@@ -205,8 +205,23 @@ for token in (
     if token not in river_tests:
         errors.append(f"Engine hydrology regression test missing: {token}")
 
-if 'VERSION = "0.1.0-SNAPSHOT-r29"' not in provider:
-    errors.append("Default engine provider must report r29")
+if 'VERSION = "0.1.0-SNAPSHOT-r30"' not in provider:
+    errors.append("Default engine provider must report r30")
+
+world_sample_cache = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/WorldSampleCache.java").read_text(encoding="utf-8")
+erosion_pipeline = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/erosion/ErosionPipeline.java").read_text(encoding="utf-8")
+for cache_source, label in (
+        (world_sample_cache, "final sample tile"),
+        (erosion_pipeline, "erosion region"),
+        (river_model, "river map")):
+    for token in ("GENERATION_LOCK_COUNT", "synchronized (generationLock(key))", "tile = cache.get(key)"):
+        adjusted = "map = cache.get(key)" if label == "river map" and token == "tile = cache.get(key)" else token
+        if adjusted not in cache_source:
+            errors.append(f"Engine {label} cache missing cold-miss coalescing: {adjusted}")
+
+engine_smoke_tests = (root / "src/test/java/dev/foucaultleon/flterraforged/engine/EngineSmokeTest.java").read_text(encoding="utf-8")
+if "concurrentColdSamplingCoalescesOneTileInstance" not in engine_smoke_tests:
+    errors.append("Engine cold-cache concurrency regression test is missing")
 
 
 terrain_sampler = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/terrain/region/TerrainRegionSampler.java").read_text(encoding="utf-8")

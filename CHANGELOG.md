@@ -1,3 +1,14 @@
+## 0.1.0-SNAPSHOT-r30
+
+- Coalesce concurrent cold misses for the same final-sample tile, erosion region and river map with
+  key-striped generation locks while retaining parallel generation for unrelated regions.
+- Keep expensive generation outside every bounded LRU cache lock and avoid recursive
+  `computeIfAbsent` wait graphs.
+- Remove the duplicate-work amplification exposed by Minecraft's parallel spawn generation and the
+  companion host's marine-structure survey.
+- Preserve all r29 terrain, hydrology, shoreline and climate output exactly.
+- Report provider version `0.1.0-SNAPSHOT-r30`.
+
 ## 0.1.0-SNAPSHOT-r29
 
 - Shape the previously semantic-only dry lake shore into a continuous basin-waterline-to-terrain transition.

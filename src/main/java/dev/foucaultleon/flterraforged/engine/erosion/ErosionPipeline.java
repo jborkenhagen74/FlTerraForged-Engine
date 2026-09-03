@@ -3,6 +3,7 @@ package dev.foucaultleon.flterraforged.engine.erosion;
 import dev.foucaultleon.flterraforged.engine.api.EngineContext;
 import dev.foucaultleon.flterraforged.engine.cell.Cell;
 import dev.foucaultleon.flterraforged.engine.cell.CellLookup;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -12,15 +13,19 @@ import java.util.Objects;
  *
  * <p>The stage keeps a bounded shared cache containing only immutable completed erosion regions.
  * Cache lookup/insertion is synchronized, while expensive region generation always happens outside
- * the cache lock. This avoids recursive {@code computeIfAbsent}-style wait graphs while still
- * allowing chunk-generation threads to share completed regions.</p>
+ * the cache lock. Key-striped generation locks coalesce concurrent misses for the same region
+ * without serializing independent regions or introducing recursive {@code computeIfAbsent}-style
+ * wait graphs.</p>
  */
 public final class ErosionPipeline implements CellLookup {
+
+    private static final int GENERATION_LOCK_COUNT = 64;
 
     private final CellLookup baseTerrain;
     private final ErosionSettings settings;
     private final ErosionTileGenerator generator;
     private final TileCache cache;
+    private final Object[] generationLocks;
 
     /**
      * Creates an erosion pipeline.
@@ -35,6 +40,7 @@ public final class ErosionPipeline implements CellLookup {
         this.settings = Objects.requireNonNull(settings, "settings");
         this.generator = new ErosionTileGenerator(seed, Objects.requireNonNull(world, "world"), baseTerrain, settings);
         this.cache = new TileCache(settings.cacheSize());
+        this.generationLocks = createGenerationLocks();
     }
 
     /** {@inheritDoc} */
@@ -67,18 +73,30 @@ public final class ErosionPipeline implements CellLookup {
             tile = cache.get(key);
         }
         if (tile == null) {
-            ErosionTile generated = generator.generate(regionX, regionZ);
-            synchronized (cache) {
-                ErosionTile existing = cache.get(key);
-                if (existing == null) {
-                    cache.put(key, generated);
-                    tile = generated;
-                } else {
-                    tile = existing;
+            synchronized (generationLock(key)) {
+                synchronized (cache) {
+                    tile = cache.get(key);
+                }
+                if (tile == null) {
+                    tile = generator.generate(regionX, regionZ);
+                    synchronized (cache) {
+                        cache.put(key, tile);
+                    }
                 }
             }
         }
         return tile.sample(x, z, settings.maximumHeightChange());
+    }
+
+    private Object generationLock(long key) {
+        int index = (int) (key ^ (key >>> 32)) & (GENERATION_LOCK_COUNT - 1);
+        return generationLocks[index];
+    }
+
+    private static Object[] createGenerationLocks() {
+        Object[] locks = new Object[GENERATION_LOCK_COUNT];
+        Arrays.setAll(locks, ignored -> new Object());
+        return locks;
     }
 
     private static final class TileCache extends LinkedHashMap<Long, ErosionTile> {

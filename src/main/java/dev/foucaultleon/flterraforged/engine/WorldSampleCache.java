@@ -13,15 +13,18 @@ import java.util.Objects;
  * <p>The cache sits above the complete world-generation pipeline, so biome lookup, density shaping,
  * height queries and surface passes can reuse exactly the same final X/Z samples. Completed tiles
  * are immutable and bounded by an access-ordered LRU. Expensive tile generation always happens
- * outside the cache lock; a concurrent duplicate is discarded if another thread wins insertion.</p>
+ * outside the cache lock. Key-striped generation locks coalesce a cold miss for the same tile
+ * while unrelated tiles remain parallel.</p>
  */
 final class WorldSampleCache {
 
     static final int TILE_SIZE = 16;
     static final int DEFAULT_MAXIMUM_TILES = 256;
+    private static final int GENERATION_LOCK_COUNT = 64;
 
     private final WorldgenPipeline pipeline;
     private final TileCache cache;
+    private final Object[] generationLocks;
 
     WorldSampleCache(WorldgenPipeline pipeline) {
         this(pipeline, DEFAULT_MAXIMUM_TILES);
@@ -33,6 +36,7 @@ final class WorldSampleCache {
             throw new IllegalArgumentException("maximumTiles must be >= 1");
         }
         this.cache = new TileCache(maximumTiles);
+        this.generationLocks = createGenerationLocks();
     }
 
     TerrainSample sample(int x, int z) {
@@ -45,14 +49,15 @@ final class WorldSampleCache {
             tile = cache.get(key);
         }
         if (tile == null) {
-            TerrainSampleTile generated = generate(tileX, tileZ);
-            synchronized (cache) {
-                TerrainSampleTile existing = cache.get(key);
-                if (existing == null) {
-                    cache.put(key, generated);
-                    tile = generated;
-                } else {
-                    tile = existing;
+            synchronized (generationLock(key)) {
+                synchronized (cache) {
+                    tile = cache.get(key);
+                }
+                if (tile == null) {
+                    tile = generate(tileX, tileZ);
+                    synchronized (cache) {
+                        cache.put(key, tile);
+                    }
                 }
             }
         }
@@ -80,6 +85,17 @@ final class WorldSampleCache {
 
     private static long key(int x, int z) {
         return (((long) x) << 32) ^ (z & 0xFFFFFFFFL);
+    }
+
+    private Object generationLock(long key) {
+        int index = (int) (key ^ (key >>> 32)) & (GENERATION_LOCK_COUNT - 1);
+        return generationLocks[index];
+    }
+
+    private static Object[] createGenerationLocks() {
+        Object[] locks = new Object[GENERATION_LOCK_COUNT];
+        Arrays.setAll(locks, ignored -> new Object());
+        return locks;
     }
 
     private static final class TerrainSampleTile {

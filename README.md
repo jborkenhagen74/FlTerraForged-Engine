@@ -1,5 +1,13 @@
 # FlTerraForged Engine
 
+## r30: bounded parallel cold-cache generation
+
+r30 preserves the r29 world shape but prevents parallel chunk workers from calculating the same
+missing final-sample tile, erosion region or river map multiple times. Small key-striped generation
+locks coalesce only identical or colliding cache keys; unrelated regions continue to generate in
+parallel, and expensive work never runs while an LRU cache lock is held. This removes the CPU and
+allocation spike exposed by cold structure-footprint sampling during Minecraft spawn preparation.
+
 ## r29: continuous wet-to-dry shore geometry
 
 r29 extends the continuous hydrology model across the actual wet-to-dry boundary. River banks now
@@ -139,7 +147,9 @@ dev.foucaultleon:flterraforged-engine:0.1.0-SNAPSHOT
 
 ## Current implementation
 
-`0.1.0-SNAPSHOT-r29` combines the migrated foundations into one coordinated pipeline and adds configurable terrain-region weights plus randomized/north-south macro-climate layouts:
+`0.1.0-SNAPSHOT-r30` combines the migrated foundations into one coordinated pipeline, retains the
+r29 terrain output and coalesces simultaneous cold-cache work. The implementation includes
+configurable terrain-region weights plus randomized/north-south macro-climate layouts:
 
 1. **Noise** — seed-aware modular scalar fields, interpolation, gradient/value
    sources, octave composition, arithmetic modules, curve/distance functions and
