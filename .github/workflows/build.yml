@@ -60,7 +60,7 @@ jobs:
 
           mkdir -p build/artifacts
           short_sha="${GITHUB_SHA:0:7}"
-          artifact_path="build/artifacts/FlTerraForged-Engine-R32-${short_sha}.jar"
+          artifact_path="build/artifacts/FlTerraForged-Engine-R33-${short_sha}.jar"
           cp "${jars[0]}" "$artifact_path"
 
           echo "artifact_path=$artifact_path" >> "$GITHUB_OUTPUT"
@@ -83,7 +83,7 @@ jobs:
           JAR_NAME: ${{ steps.collect_engine.outputs.jar_name }}
         run: |
           {
-            echo "### FlTerraForged Engine R32 artifact"
+            echo "### FlTerraForged Engine R33 artifact"
             echo
             echo "- JAR: \`$JAR_NAME\`"
             echo "- SHA-256: \`$ARTIFACT_DIGEST\`"
