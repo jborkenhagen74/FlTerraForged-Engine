@@ -205,9 +205,25 @@ for token in (
     if token not in river_tests:
         errors.append(f"Engine hydrology regression test missing: {token}")
 
-if 'VERSION = "0.1.0-SNAPSHOT-r29"' not in provider:
-    errors.append("Default engine provider must report r29")
+if 'VERSION = "0.1.0-SNAPSHOT-r34"' not in provider:
+    errors.append("Default engine provider must report r34")
 
+worldgen_pipeline = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/pipeline/WorldgenPipeline.java").read_text(encoding="utf-8")
+default_world = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/DefaultTerrainWorld.java").read_text(encoding="utf-8")
+for token in (
+        "public TerrainEnvironmentSample environment(int x, int z)",
+        "river.lookup(x, z, center)",
+        "new TerrainEnvironmentSample(center.height, waterSurface, type)"):
+    if token not in worldgen_pipeline:
+        errors.append(f"R34 lightweight environment pipeline missing: {token}")
+if "return pipeline.environment(x, z);" not in default_world:
+    errors.append("DefaultTerrainWorld must route placement probes directly to pipeline.environment")
+environment_start = worldgen_pipeline.find("public TerrainEnvironmentSample environment(int x, int z)")
+environment_end = worldgen_pipeline.find("public TerrainSample[] sampleTile", environment_start)
+environment_body = worldgen_pipeline[environment_start:environment_end]
+for forbidden in ("sampleCell(x, z", "climate.lookup(", "terrain.surfaceHeight(x - 1", "terrain.surfaceHeight(x + 1"):
+    if forbidden in environment_body:
+        errors.append(f"R34 lightweight environment path must not use final-sample work: {forbidden}")
 
 terrain_sampler = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/terrain/region/TerrainRegionSampler.java").read_text(encoding="utf-8")
 terrain_blender = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/terrain/Blender.java").read_text(encoding="utf-8")
@@ -234,4 +250,4 @@ if errors:
     print("\n".join(errors), file=sys.stderr)
     raise SystemExit(1)
 
-print("Engine layout verified: Java-only, ServiceLoader provider present, public Maven API model")
+print("Engine layout verified: R34 lightweight placement environment, Java-only isolation, ServiceLoader provider present")
