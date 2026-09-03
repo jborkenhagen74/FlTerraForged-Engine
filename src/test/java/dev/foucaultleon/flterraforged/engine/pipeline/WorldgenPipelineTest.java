@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import dev.foucaultleon.flterraforged.engine.EnginePreset;
 import dev.foucaultleon.flterraforged.engine.EngineSettings;
 import dev.foucaultleon.flterraforged.engine.api.EngineContext;
+import dev.foucaultleon.flterraforged.engine.api.terrain.TerrainEnvironmentSample;
 import dev.foucaultleon.flterraforged.engine.api.terrain.TerrainSample;
 import dev.foucaultleon.flterraforged.engine.cell.Cell;
 import java.util.ArrayList;
@@ -79,6 +80,21 @@ final class WorldgenPipelineTest {
         assertEquals(cell.riverDepth, sample.river().depth());
         assertEquals(cell.riverWaterSurfaceHeight, sample.river().waterSurfaceHeight());
         assertEquals(cell.riverFlow, sample.river().flow());
+    }
+
+    @Test
+    void lightweightEnvironmentRetainsFinalSurfaceWithoutGradientWork() {
+        WorldgenPipeline pipeline = pipeline(778899L, EnginePreset.BALANCED);
+        int x = -915;
+        int z = 1207;
+
+        TerrainEnvironmentSample environment = pipeline.environment(x, z);
+        TerrainSample full = pipeline.sample(x, z);
+
+        assertEquals(full.surfaceHeight(), environment.surfaceHeight(), 1.0E-9D);
+        assertEquals(environment, pipeline.environment(x, z));
+        assertTrue(environment.hasWaterSurfaceHeight()
+                || Double.isNaN(environment.waterSurfaceHeight()));
     }
 
     @Test
