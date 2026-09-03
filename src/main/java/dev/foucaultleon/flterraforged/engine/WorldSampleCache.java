@@ -6,130 +6,153 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 
 /**
- * World-scoped cache of immutable, chunk-aligned final terrain-sample tiles.
+ * World-scoped adaptive cache of immutable final terrain samples.
  *
- * <p>The cache sits above the complete world-generation pipeline, so biome lookup, density shaping,
- * height queries, hydrology guards and surface passes can reuse exactly the same final X/Z samples.
- * Completed tiles are immutable and bounded by an access-ordered LRU. Concurrent cold misses for
- * the same tile are coalesced through a single-flight map: one caller computes synchronously on its
- * current worker while all other callers reuse that result. No additional task is submitted to a
- * world-generation executor and expensive pipeline work never runs while the LRU monitor is held.</p>
+ * <p>Dense chunk generation is served by completed 16x16 tiles, while isolated lookups first use a
+ * bounded exact-point cache. A tile is promoted only after several distinct cache misses address the
+ * same tile. This avoids calculating a complete terrain tile for sparse structure/environment probes
+ * while retaining the tile reuse that normal chunk generation needs.</p>
+ *
+ * <p>Cache misses never wait for another generating thread. Expensive pipeline work always runs
+ * outside cache monitors. Concurrent cold callers may therefore calculate the same deterministic
+ * value more than once, but only one completed value is retained. This bounded duplicate work is a
+ * deliberate liveness guarantee for hosts such as Minecraft whose world-generation workers must not
+ * form synchronous wait graphs through an external cache.</p>
  */
 final class WorldSampleCache {
 
     static final int TILE_SIZE = 16;
     static final int DEFAULT_MAXIMUM_TILES = 256;
+    static final int DEFAULT_MAXIMUM_POINTS = 8192;
+    static final int DEFAULT_MAXIMUM_TOUCHES = 2048;
+    static final int FULL_TILE_PROMOTION_THRESHOLD = 4;
 
     private final WorldgenPipeline pipeline;
-    private final TileCache cache;
-    private final ConcurrentMap<Long, CompletableFuture<TerrainSampleTile>> inFlight =
-            new ConcurrentHashMap<>();
+    private final TileCache tiles;
+    private final PointCache points;
+    private final TouchCache touches;
 
     WorldSampleCache(WorldgenPipeline pipeline) {
-        this(pipeline, DEFAULT_MAXIMUM_TILES);
+        this(
+                pipeline,
+                DEFAULT_MAXIMUM_TILES,
+                DEFAULT_MAXIMUM_POINTS,
+                DEFAULT_MAXIMUM_TOUCHES);
     }
 
-    WorldSampleCache(WorldgenPipeline pipeline, int maximumTiles) {
+    WorldSampleCache(
+            WorldgenPipeline pipeline,
+            int maximumTiles,
+            int maximumPoints,
+            int maximumTouches) {
         this.pipeline = Objects.requireNonNull(pipeline, "pipeline");
         if (maximumTiles < 1) {
             throw new IllegalArgumentException("maximumTiles must be >= 1");
         }
-        this.cache = new TileCache(maximumTiles);
+        if (maximumPoints < 1) {
+            throw new IllegalArgumentException("maximumPoints must be >= 1");
+        }
+        if (maximumTouches < 1) {
+            throw new IllegalArgumentException("maximumTouches must be >= 1");
+        }
+        this.tiles = new TileCache(maximumTiles);
+        this.points = new PointCache(maximumPoints);
+        this.touches = new TouchCache(maximumTouches);
     }
 
     TerrainSample sample(int x, int z) {
         int tileX = Math.floorDiv(x, TILE_SIZE);
         int tileZ = Math.floorDiv(z, TILE_SIZE);
-        long key = key(tileX, tileZ);
+        long tileKey = key(tileX, tileZ);
 
-        TerrainSampleTile tile = completed(key);
-        if (tile == null) {
-            tile = loadSingleFlight(key, tileX, tileZ);
+        TerrainSampleTile tile;
+        synchronized (tiles) {
+            tile = tiles.get(tileKey);
         }
-        return tile.sample(x, z);
+        if (tile != null) {
+            return tile.sample(x, z);
+        }
+
+        long pointKey = key(x, z);
+        TerrainSample point;
+        synchronized (points) {
+            point = points.get(pointKey);
+        }
+        if (point != null) {
+            return point;
+        }
+
+        int touchCount;
+        synchronized (touches) {
+            touchCount = touches.record(tileKey);
+        }
+        if (touchCount >= FULL_TILE_PROMOTION_THRESHOLD) {
+            TerrainSampleTile generated = generateTile(tileX, tileZ);
+            synchronized (tiles) {
+                TerrainSampleTile existing = tiles.get(tileKey);
+                if (existing == null) {
+                    tiles.put(tileKey, generated);
+                    tile = generated;
+                } else {
+                    tile = existing;
+                }
+            }
+            return tile.sample(x, z);
+        }
+
+        TerrainSample generated = pipeline.sample(x, z);
+
+        // A racing dense caller may have promoted the tile while this sparse point was calculated.
+        synchronized (tiles) {
+            tile = tiles.get(tileKey);
+        }
+        if (tile != null) {
+            return tile.sample(x, z);
+        }
+
+        synchronized (points) {
+            TerrainSample existing = points.get(pointKey);
+            if (existing == null) {
+                points.put(pointKey, generated);
+                point = generated;
+            } else {
+                point = existing;
+            }
+        }
+        return point;
     }
 
     void clear() {
-        synchronized (cache) {
-            cache.clear();
+        synchronized (tiles) {
+            tiles.clear();
+        }
+        synchronized (points) {
+            points.clear();
+        }
+        synchronized (touches) {
+            touches.clear();
         }
     }
 
     int cachedTiles() {
-        synchronized (cache) {
-            return cache.size();
+        synchronized (tiles) {
+            return tiles.size();
         }
     }
 
-    int inFlightTiles() {
-        return inFlight.size();
-    }
-
-    private TerrainSampleTile completed(long key) {
-        synchronized (cache) {
-            return cache.get(key);
+    int cachedPoints() {
+        synchronized (points) {
+            return points.size();
         }
     }
 
-    private TerrainSampleTile loadSingleFlight(long key, int tileX, int tileZ) {
-        CompletableFuture<TerrainSampleTile> owned = new CompletableFuture<>();
-        CompletableFuture<TerrainSampleTile> existing = inFlight.putIfAbsent(key, owned);
-        if (existing != null) {
-            return await(existing);
-        }
-
-        try {
-            TerrainSampleTile generated = generate(tileX, tileZ);
-            TerrainSampleTile retained;
-            synchronized (cache) {
-                TerrainSampleTile cached = cache.get(key);
-                if (cached == null) {
-                    cache.put(key, generated);
-                    retained = generated;
-                } else {
-                    retained = cached;
-                }
-            }
-            owned.complete(retained);
-            return retained;
-        } catch (Throwable throwable) {
-            owned.completeExceptionally(throwable);
-            throw propagate(throwable);
-        } finally {
-            inFlight.remove(key, owned);
-        }
-    }
-
-    private TerrainSampleTile generate(int tileX, int tileZ) {
-        int originX = Math.multiplyExact(tileX, TILE_SIZE);
-        int originZ = Math.multiplyExact(tileZ, TILE_SIZE);
+    private TerrainSampleTile generateTile(int tileX, int tileZ) {
+        int originX = tileX * TILE_SIZE;
+        int originZ = tileZ * TILE_SIZE;
         TerrainSample[] samples = pipeline.sampleTile(originX, originZ, TILE_SIZE);
         return new TerrainSampleTile(originX, originZ, samples);
-    }
-
-    private static TerrainSampleTile await(CompletableFuture<TerrainSampleTile> future) {
-        try {
-            return future.join();
-        } catch (CompletionException exception) {
-            Throwable cause = exception.getCause();
-            throw propagate(cause == null ? exception : cause);
-        }
-    }
-
-    private static RuntimeException propagate(Throwable throwable) {
-        if (throwable instanceof RuntimeException runtimeException) {
-            return runtimeException;
-        }
-        if (throwable instanceof Error error) {
-            throw error;
-        }
-        return new IllegalStateException("Terrain sample tile generation failed", throwable);
     }
 
     private static long key(int x, int z) {
@@ -176,6 +199,46 @@ final class WorldSampleCache {
 
         @Override
         protected boolean removeEldestEntry(Map.Entry<Long, TerrainSampleTile> eldest) {
+            return size() > maximumSize;
+        }
+    }
+
+    private static final class PointCache extends LinkedHashMap<Long, TerrainSample> {
+
+        private static final long serialVersionUID = 1L;
+        private final int maximumSize;
+
+        PointCache(int maximumSize) {
+            super(maximumSize + 1, 0.75F, true);
+            this.maximumSize = maximumSize;
+        }
+
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<Long, TerrainSample> eldest) {
+            return size() > maximumSize;
+        }
+    }
+
+    private static final class TouchCache extends LinkedHashMap<Long, Integer> {
+
+        private static final long serialVersionUID = 1L;
+        private final int maximumSize;
+
+        TouchCache(int maximumSize) {
+            super(maximumSize + 1, 0.75F, true);
+            this.maximumSize = maximumSize;
+        }
+
+        int record(long tileKey) {
+            int next = Math.min(
+                    FULL_TILE_PROMOTION_THRESHOLD,
+                    getOrDefault(tileKey, 0) + 1);
+            put(tileKey, next);
+            return next;
+        }
+
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<Long, Integer> eldest) {
             return size() > maximumSize;
         }
     }
