@@ -6,6 +6,8 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * World-scoped adaptive cache of immutable final terrain samples.
@@ -16,10 +18,12 @@ import java.util.Objects;
  * while retaining the tile reuse that normal chunk generation needs.</p>
  *
  * <p>Cache misses never wait for another generating thread. Expensive pipeline work always runs
- * outside cache monitors. Concurrent cold callers may therefore calculate the same deterministic
- * value more than once, but only one completed value is retained. This bounded duplicate work is a
- * deliberate liveness guarantee for hosts such as Minecraft whose world-generation workers must not
- * form synchronous wait graphs through an external cache.</p>
+ * outside cache monitors. One caller may claim a non-blocking bulk-promotion token for a tile; racing
+ * callers that cannot claim it simply calculate their requested sparse point instead of waiting.
+ * Concurrent point misses may still calculate the same deterministic value more than once, but only
+ * one completed value is retained. This bounded duplicate work is a deliberate liveness guarantee
+ * for hosts such as Minecraft whose world-generation workers must not form synchronous wait graphs
+ * through an external cache.</p>
  */
 final class WorldSampleCache {
 
@@ -33,6 +37,7 @@ final class WorldSampleCache {
     private final TileCache tiles;
     private final PointCache points;
     private final TouchCache touches;
+    private final Set<Long> promotingTiles = ConcurrentHashMap.newKeySet();
 
     WorldSampleCache(WorldgenPipeline pipeline) {
         this(
@@ -67,19 +72,13 @@ final class WorldSampleCache {
         int tileZ = Math.floorDiv(z, TILE_SIZE);
         long tileKey = key(tileX, tileZ);
 
-        TerrainSampleTile tile;
-        synchronized (tiles) {
-            tile = tiles.get(tileKey);
-        }
+        TerrainSampleTile tile = cachedTile(tileKey);
         if (tile != null) {
             return tile.sample(x, z);
         }
 
         long pointKey = key(x, z);
-        TerrainSample point;
-        synchronized (points) {
-            point = points.get(pointKey);
-        }
+        TerrainSample point = cachedPoint(pointKey);
         if (point != null) {
             return point;
         }
@@ -88,40 +87,29 @@ final class WorldSampleCache {
         synchronized (touches) {
             touchCount = touches.record(tileKey);
         }
-        if (touchCount >= FULL_TILE_PROMOTION_THRESHOLD) {
-            TerrainSampleTile generated = generateTile(tileX, tileZ);
-            synchronized (tiles) {
-                TerrainSampleTile existing = tiles.get(tileKey);
-                if (existing == null) {
-                    tiles.put(tileKey, generated);
-                    tile = generated;
-                } else {
-                    tile = existing;
+        if (touchCount >= FULL_TILE_PROMOTION_THRESHOLD && promotingTiles.add(tileKey)) {
+            try {
+                // A racing caller may have finished promotion between our initial lookup and claim.
+                tile = cachedTile(tileKey);
+                if (tile == null) {
+                    TerrainSampleTile generated = generateTile(tileX, tileZ);
+                    synchronized (tiles) {
+                        TerrainSampleTile existing = tiles.get(tileKey);
+                        if (existing == null) {
+                            tiles.put(tileKey, generated);
+                            tile = generated;
+                        } else {
+                            tile = existing;
+                        }
+                    }
                 }
-            }
-            return tile.sample(x, z);
-        }
-
-        TerrainSample generated = pipeline.sample(x, z);
-
-        // A racing dense caller may have promoted the tile while this sparse point was calculated.
-        synchronized (tiles) {
-            tile = tiles.get(tileKey);
-        }
-        if (tile != null) {
-            return tile.sample(x, z);
-        }
-
-        synchronized (points) {
-            TerrainSample existing = points.get(pointKey);
-            if (existing == null) {
-                points.put(pointKey, generated);
-                point = generated;
-            } else {
-                point = existing;
+                return tile.sample(x, z);
+            } finally {
+                promotingTiles.remove(tileKey);
             }
         }
-        return point;
+
+        return sampleSparse(tileKey, pointKey, x, z);
     }
 
     void clear() {
@@ -134,6 +122,7 @@ final class WorldSampleCache {
         synchronized (touches) {
             touches.clear();
         }
+        promotingTiles.clear();
     }
 
     int cachedTiles() {
@@ -145,6 +134,37 @@ final class WorldSampleCache {
     int cachedPoints() {
         synchronized (points) {
             return points.size();
+        }
+    }
+
+    private TerrainSample sampleSparse(long tileKey, long pointKey, int x, int z) {
+        TerrainSample generated = pipeline.sample(x, z);
+
+        // A racing dense caller may have promoted the tile while this sparse point was calculated.
+        TerrainSampleTile tile = cachedTile(tileKey);
+        if (tile != null) {
+            return tile.sample(x, z);
+        }
+
+        synchronized (points) {
+            TerrainSample existing = points.get(pointKey);
+            if (existing != null) {
+                return existing;
+            }
+            points.put(pointKey, generated);
+            return generated;
+        }
+    }
+
+    private TerrainSampleTile cachedTile(long tileKey) {
+        synchronized (tiles) {
+            return tiles.get(tileKey);
+        }
+    }
+
+    private TerrainSample cachedPoint(long pointKey) {
+        synchronized (points) {
+            return points.get(pointKey);
         }
     }
 
