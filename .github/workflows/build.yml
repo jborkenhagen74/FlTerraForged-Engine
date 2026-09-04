@@ -43,30 +43,30 @@ jobs:
       - name: Verify Engine layout
         run: python3 tools/verify-layout.py
 
-      - name: Checkout R43 host API source
-        if: github.ref == 'refs/heads/revision/r34-lightweight-structure-environment'
+      - name: Checkout R44 host API source
+        if: github.ref == 'refs/heads/revision/r35-dry-coast-semantics'
         uses: actions/checkout@v6
         with:
           repository: jborkenhagen74/FlTerraForged
-          ref: revision/r43-lightweight-marine-placement
-          path: .ci/flterraforged-r43
+          ref: revision/r44-coast-hydrology-performance-biomes
+          path: .ci/flterraforged-r44
 
-      - name: Build R43 Engine API local repository
-        if: github.ref == 'refs/heads/revision/r34-lightweight-structure-environment'
-        run: gradle -p .ci/flterraforged-r43 -Dorg.gradle.java.installations.paths="$FLTERRAFORGED_JAVA17_HOME,$JAVA_HOME" --no-daemon --warning-mode all :engine-api:publish
+      - name: Build R44 Engine API local repository
+        if: github.ref == 'refs/heads/revision/r35-dry-coast-semantics'
+        run: gradle -p .ci/flterraforged-r44 -Dorg.gradle.java.installations.paths="$FLTERRAFORGED_JAVA17_HOME,$JAVA_HOME" --no-daemon --warning-mode all :engine-api:publish
 
-      - name: Build and test R34 against R43 Engine API
-        if: github.ref == 'refs/heads/revision/r34-lightweight-structure-environment'
+      - name: Build and test R35 against R44 Engine API
+        if: github.ref == 'refs/heads/revision/r35-dry-coast-semantics'
         env:
-          FLTERRAFORGED_API_LOCAL_REPOSITORY: ${{ github.workspace }}/.ci/flterraforged-r43/build/maven-repository
+          FLTERRAFORGED_API_LOCAL_REPOSITORY: ${{ github.workspace }}/.ci/flterraforged-r44/build/maven-repository
         run: gradle -Dorg.gradle.java.installations.paths="$FLTERRAFORGED_JAVA17_HOME,$JAVA_HOME" --no-daemon --refresh-dependencies --warning-mode all clean check jar
 
       - name: Build and test against public Engine API Maven repository
-        if: github.ref != 'refs/heads/revision/r34-lightweight-structure-environment'
+        if: github.ref != 'refs/heads/revision/r35-dry-coast-semantics'
         run: gradle -Dorg.gradle.java.installations.paths="$FLTERRAFORGED_JAVA17_HOME,$JAVA_HOME" --no-daemon --refresh-dependencies --warning-mode all clean check
 
-      - name: Collect R34 runtime JAR
-        if: github.ref == 'refs/heads/revision/r34-lightweight-structure-environment'
+      - name: Collect R35 runtime JAR
+        if: github.ref == 'refs/heads/revision/r35-dry-coast-semantics'
         id: collect_engine
         shell: bash
         run: |
@@ -83,15 +83,15 @@ jobs:
           fi
           short_sha="${GITHUB_SHA:0:7}"
           mkdir -p build/artifacts
-          path="build/artifacts/FlTerraForged-Engine-R34-${short_sha}.jar"
+          path="build/artifacts/FlTerraForged-Engine-R35-${short_sha}.jar"
           cp "${jars[0]}" "$path"
           echo "artifact_path=$path" >> "$GITHUB_OUTPUT"
 
-      - name: Upload R34 runtime JAR
-        if: github.ref == 'refs/heads/revision/r34-lightweight-structure-environment'
+      - name: Upload R35 runtime JAR
+        if: github.ref == 'refs/heads/revision/r35-dry-coast-semantics'
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: FlTerraForged-Engine-R34
+          name: FlTerraForged-Engine-R35
           path: ${{ steps.collect_engine.outputs.artifact_path }}
           archive: false
           if-no-files-found: error
