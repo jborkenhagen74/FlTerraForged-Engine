@@ -156,11 +156,18 @@ for token in ("COASTAL_RELEASE_START", "COASTAL_RELEASE_END", "coastalCeiling"):
     if token not in configured_terrain:
         errors.append(f"ConfiguredTerrain missing smooth coastal-height release: {token}")
 if "continentalness < settings.oceanContinentalness() && belowSea" not in terrain_classifier:
-    errors.append("TerrainClassifier must require submerged terrain for continental ocean classification")
-if "continentalness < settings.coastContinentalness()" not in terrain_classifier or "&& height <= seaLevel + settings.coastHeightAboveSea()" not in terrain_classifier:
-    errors.append("TerrainClassifier must require both shoreline proximity and low elevation for coast")
-if "river.hasWaterSurfaceHeight() && river.depth() >= settings.riverDepth()" not in terrain_classifier:
-    errors.append("TerrainClassifier must not assign RIVER semantics to a dry incision envelope")
+    errors.append("TerrainClassifier must retain the deep continental ocean fallback")
+for token in (
+        "boolean submergedMarine = oceanward && height < seaLevel",
+        "if (lake && river.hasWaterSurfaceHeight())",
+        "if (river.hasWaterSurfaceHeight() && river.depth() >= settings.riverDepth())",
+        "if (lakeShore)",
+        "&& height >= seaLevel",
+        "&& height <= seaLevel + settings.coastHeightAboveSea()"):
+    if token not in terrain_classifier:
+        errors.append(f"R35 TerrainClassifier missing dry-coast/inland-water guard: {token}")
+if terrain_classifier.find("if (lake && river.hasWaterSurfaceHeight())") > terrain_classifier.find("boolean submergedMarine"):
+    errors.append("R35 inland hydrology must be classified before marine semantics")
 if "targetDepth" not in lake_field or "Math.min(14.0D" not in lake_field:
     errors.append("LakeField must retain deeper basin-core lake shaping")
 for token in ("basinNodeCounts", "basinMinimumDepth", "Maths.lerp(3.50D, 2.50D"):
@@ -193,7 +200,7 @@ for token in (
 if "bilinearGradient" in lake_field:
     errors.append("LakeField must not divide shoreline distance by discontinuous local cell gradient")
 for token in ("MAX_WATER_SURFACE_GRADE", "limitWaterSurfaceGrade"):
-    if token not in (root / "src/main/java/dev/foucaultleon/flterraforged/engine/river/RivermapGenerator.java").read_text(encoding="utf-8"):
+    if token not in river_generator:
         errors.append(f"RivermapGenerator missing bounded water grade: {token}")
 
 river_tests = (root / "src/test/java/dev/foucaultleon/flterraforged/engine/river/RiverFoundationTest.java").read_text(encoding="utf-8")
@@ -205,8 +212,17 @@ for token in (
     if token not in river_tests:
         errors.append(f"Engine hydrology regression test missing: {token}")
 
-if 'VERSION = "0.1.0-SNAPSHOT-r34"' not in provider:
-    errors.append("Default engine provider must report r34")
+marine_tests = (root / "src/test/java/dev/foucaultleon/flterraforged/engine/terrain/MarineClassificationRegressionTest.java").read_text(encoding="utf-8")
+for token in (
+        "shallowSubmergedCoastBandIsOceanNotCoast",
+        "dryShoreAtSeaLevelRemainsCoast",
+        "materialLakeKeepsInlandIdentityInsideCoastalBand",
+        "dryLakeShoreKeepsInlandIdentityInsideCoastalBand"):
+    if token not in marine_tests:
+        errors.append(f"R35 marine regression test missing: {token}")
+
+if 'VERSION = "0.1.0-SNAPSHOT-r35"' not in provider:
+    errors.append("Default engine provider must report r35")
 
 worldgen_pipeline = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/pipeline/WorldgenPipeline.java").read_text(encoding="utf-8")
 default_world = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/DefaultTerrainWorld.java").read_text(encoding="utf-8")
@@ -215,7 +231,7 @@ for token in (
         "river.lookup(x, z, center)",
         "new TerrainEnvironmentSample(center.height, waterSurface, type)"):
     if token not in worldgen_pipeline:
-        errors.append(f"R34 lightweight environment pipeline missing: {token}")
+        errors.append(f"R35 lightweight environment pipeline missing: {token}")
 if "return pipeline.environment(x, z);" not in default_world:
     errors.append("DefaultTerrainWorld must route placement probes directly to pipeline.environment")
 environment_start = worldgen_pipeline.find("public TerrainEnvironmentSample environment(int x, int z)")
@@ -223,7 +239,7 @@ environment_end = worldgen_pipeline.find("public TerrainSample[] sampleTile", en
 environment_body = worldgen_pipeline[environment_start:environment_end]
 for forbidden in ("sampleCell(x, z", "climate.lookup(", "terrain.surfaceHeight(x - 1", "terrain.surfaceHeight(x + 1"):
     if forbidden in environment_body:
-        errors.append(f"R34 lightweight environment path must not use final-sample work: {forbidden}")
+        errors.append(f"R35 lightweight environment path must not use final-sample work: {forbidden}")
 
 terrain_sampler = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/terrain/region/TerrainRegionSampler.java").read_text(encoding="utf-8")
 terrain_blender = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/terrain/Blender.java").read_text(encoding="utf-8")
@@ -250,4 +266,4 @@ if errors:
     print("\n".join(errors), file=sys.stderr)
     raise SystemExit(1)
 
-print("Engine layout verified: R34 lightweight placement environment, Java-only isolation, ServiceLoader provider present")
+print("Engine layout verified: R35 dry coast semantics, lightweight placement environment, Java-only isolation, ServiceLoader provider present")
