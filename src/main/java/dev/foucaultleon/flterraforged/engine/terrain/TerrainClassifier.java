@@ -102,13 +102,10 @@ public final class TerrainClassifier {
             boolean lakeShore) {
         Objects.requireNonNull(baseType, "baseType");
         Objects.requireNonNull(river, "river");
-        boolean belowSea = height < seaLevel - 1.50D;
-        boolean oceanward = continentalness < settings.coastContinentalness();
-        boolean deepEnough = height < seaLevel - settings.oceanDepthBelowSea();
-        if ((deepEnough && oceanward)
-                || (continentalness < settings.oceanContinentalness() && belowSea)) {
-            return StandardTerrainTypes.OCEAN;
-        }
+
+        // Explicit inland hydrology owns its basin even near the continental coast. This ordering
+        // prevents a low lake or river mouth from being reclassified as ocean merely because the
+        // broad continent field is oceanward.
         if (lake && river.hasWaterSurfaceHeight()) {
             return StandardTerrainTypes.LAKE;
         }
@@ -118,10 +115,26 @@ public final class TerrainClassifier {
         if (lakeShore) {
             return LAKE_SHORE;
         }
+
+        boolean belowSea = height < seaLevel - 1.50D;
+        boolean oceanward = continentalness < settings.coastContinentalness();
+        boolean submergedMarine = oceanward && height < seaLevel;
+        boolean deepEnough = height < seaLevel - settings.oceanDepthBelowSea();
+
+        // COAST is intentionally a dry shoreline semantic. Any non-hydrology terrain on the
+        // oceanward side that is physically below sea level is OCEAN, including the shallow shelf.
+        // This lets Minecraft materializers fill only OCEAN columns and prevents disconnected
+        // sea-level puddles from appearing behind dry beach ridges.
+        if (submergedMarine
+                || (deepEnough && oceanward)
+                || (continentalness < settings.oceanContinentalness() && belowSea)) {
+            return StandardTerrainTypes.OCEAN;
+        }
+
         // A low elevation alone does not make an inland plain a coast. Coastal semantics require
-        // both proximity to the continent edge and a surface near sea level. This also prevents
-        // beach biomes (and their structures) from leaking far inland.
-        if (continentalness < settings.coastContinentalness()
+        // both proximity to the continent edge and a dry surface at or slightly above sea level.
+        if (oceanward
+                && height >= seaLevel
                 && height <= seaLevel + settings.coastHeightAboveSea()) {
             return StandardTerrainTypes.COAST;
         }
