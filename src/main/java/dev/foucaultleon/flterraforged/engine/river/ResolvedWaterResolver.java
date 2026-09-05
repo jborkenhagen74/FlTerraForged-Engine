@@ -69,7 +69,9 @@ public final class ResolvedWaterResolver {
         double bed = target.height;
         if (!Double.isFinite(target.riverWaterSurfaceHeight)
                 || target.riverWaterSurfaceHeight <= bed + MATERIAL_WATER_EPSILON) {
-            return ResolvedWaterField.dry(bed);
+            return ResolvedWaterField.dry(
+                    bed,
+                    Maths.clamp(target.riverMask, 0.0D, 1.0D));
         }
         return new ResolvedWaterField(
                 ResolvedWaterOwner.RIVER,
