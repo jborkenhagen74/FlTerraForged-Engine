@@ -11,9 +11,10 @@ import java.util.Objects;
  * World-scoped cache of immutable, chunk-aligned final terrain-sample tiles.
  *
  * <p>The cache sits above the complete world-generation pipeline, so biome lookup, density shaping,
- * height queries and surface passes can reuse exactly the same final X/Z samples. Completed tiles
- * are immutable and bounded by an access-ordered LRU. Expensive tile generation always happens
- * outside the cache lock; a concurrent duplicate is discarded if another thread wins insertion.</p>
+ * height queries and late reconciliation can reuse exactly the same final X/Z samples. Completed
+ * tiles are immutable and bounded by an access-ordered LRU. Expensive tile generation always
+ * happens outside the cache lock; a concurrent duplicate is discarded if another thread wins
+ * insertion.</p>
  */
 final class WorldSampleCache {
 
@@ -38,25 +39,29 @@ final class WorldSampleCache {
     TerrainSample sample(int x, int z) {
         int tileX = Math.floorDiv(x, TILE_SIZE);
         int tileZ = Math.floorDiv(z, TILE_SIZE);
-        long key = key(tileX, tileZ);
+        return loadTile(tileX, tileZ).sample(x, z);
+    }
 
-        TerrainSampleTile tile;
-        synchronized (cache) {
-            tile = cache.get(key);
+    TerrainSample[] sampleTile(int originX, int originZ, int size) {
+        if (size < 1) {
+            throw new IllegalArgumentException("size must be >= 1");
         }
-        if (tile == null) {
-            TerrainSampleTile generated = generate(tileX, tileZ);
-            synchronized (cache) {
-                TerrainSampleTile existing = cache.get(key);
-                if (existing == null) {
-                    cache.put(key, generated);
-                    tile = generated;
-                } else {
-                    tile = existing;
-                }
+        if (size == TILE_SIZE
+                && Math.floorMod(originX, TILE_SIZE) == 0
+                && Math.floorMod(originZ, TILE_SIZE) == 0) {
+            return loadTile(
+                            Math.floorDiv(originX, TILE_SIZE),
+                            Math.floorDiv(originZ, TILE_SIZE))
+                    .copySamples();
+        }
+
+        TerrainSample[] samples = new TerrainSample[size * size];
+        for (int localZ = 0; localZ < size; localZ++) {
+            for (int localX = 0; localX < size; localX++) {
+                samples[localZ * size + localX] = sample(originX + localX, originZ + localZ);
             }
         }
-        return tile.sample(x, z);
+        return samples;
     }
 
     void clear() {
@@ -68,6 +73,27 @@ final class WorldSampleCache {
     int cachedTiles() {
         synchronized (cache) {
             return cache.size();
+        }
+    }
+
+    private TerrainSampleTile loadTile(int tileX, int tileZ) {
+        long key = key(tileX, tileZ);
+        TerrainSampleTile tile;
+        synchronized (cache) {
+            tile = cache.get(key);
+        }
+        if (tile != null) {
+            return tile;
+        }
+
+        TerrainSampleTile generated = generate(tileX, tileZ);
+        synchronized (cache) {
+            TerrainSampleTile existing = cache.get(key);
+            if (existing == null) {
+                cache.put(key, generated);
+                return generated;
+            }
+            return existing;
         }
     }
 
@@ -107,6 +133,10 @@ final class WorldSampleCache {
                 throw new IllegalArgumentException("Coordinate lies outside terrain sample tile");
             }
             return samples[localZ * TILE_SIZE + localX];
+        }
+
+        TerrainSample[] copySamples() {
+            return samples.clone();
         }
     }
 
