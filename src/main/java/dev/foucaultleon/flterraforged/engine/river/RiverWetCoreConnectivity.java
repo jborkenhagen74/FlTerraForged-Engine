@@ -9,22 +9,16 @@ import java.util.Objects;
 /**
  * Preserves topological continuity of the materialized wet core of refined river paths.
  *
- * <p>The wrapper has two responsibilities. First, it closes one- or two-column dry barriers that
- * can remain when the ordinary river model refuses an implausibly deep local incision. Second, it
- * gives receiving water bodies authority over the final water level and bed at a river mouth. Open
- * ocean therefore wins over a river profile, and a material lake wins over the incoming river while
- * a genuine terrain-backed drop immediately upstream is retained as a waterfall.</p>
+ * <p>The wrapper closes one- or two-column dry barriers that can remain when the ordinary river
+ * model refuses an implausibly deep local incision. It also aligns an approaching river with a
+ * nearby receiving-water level without making the approach bed deeper than the already-shaped river
+ * channel. Final lake and ocean ownership is handled by {@link ReceivingWaterOverlay} after this
+ * stage.</p>
  *
- * <p>R39 extends receiver authority across narrow wet-core connectors even when the exact connector
- * column is not classified as {@code lake_shore}. Lake probes use the cached lake-only field instead
- * of recursively re-running river selection. Non-shore bridges require corroborating lake samples
- * in the same nearest probe ring, preventing a river that merely runs beside a lake from being
- * flattened to the lake surface. A dry lake-shore transition remains dry unless an actual river wet
- * core reaches it.</p>
- *
- * <p>Receiver authority also removes the incoming river's artificial incision from the receiving
- * water body. The pre-river terrain is retained when it is naturally deeper, but a narrow river bed
- * is not allowed to continue as a trench through an otherwise smoother lake or marine floor.</p>
+ * <p>Lake probes use the cached lake-only field instead of recursively re-running river selection.
+ * Non-shore bridges require corroborating lake samples in the same nearest probe ring, preventing a
+ * river that merely runs beside a lake from being flattened to the lake surface. A dry lake-shore
+ * transition remains dry unless an actual river wet core reaches it.</p>
  *
  * <p>All corrections happen in Engine space before Minecraft materialization. No block-provider or
  * platform-specific information is required, so full-block and variable-height materializers see
@@ -136,9 +130,11 @@ public final class RiverWetCoreConnectivity implements CellLookup {
 
         if (isOpenOceanReceiver(target)) {
             receiverLevel = world.seaLevel();
+            // The approach may rise toward the natural marine floor, but it must never be forced
+            // down to the ordinary deep-river profile. The final ocean overlay owns the interior.
             receiverBed = Math.min(
                     naturalBed,
-                    receiverLevel - minimumDepth(receiverLevel));
+                    receiverLevel - MINIMUM_WATER_DEPTH);
             receiverPriority = 3;
         }
 
@@ -164,11 +160,16 @@ public final class RiverWetCoreConnectivity implements CellLookup {
             return;
         }
 
-        double fallbackBed = receiverLevel - minimumDepth(receiverLevel);
+        double fallbackBed = receiverLevel - MINIMUM_WATER_DEPTH;
+        double desiredBed = Double.isFinite(receiverBed) ? receiverBed : fallbackBed;
+        // Receiver alignment may fill/raise an over-incised river mouth, never deepen it further.
         double bed = Maths.clamp(
-                Double.isFinite(receiverBed) ? receiverBed : fallbackBed,
+                Math.max(target.height, desiredBed),
                 world.minY() + 1.0D,
                 world.maxYExclusive() - 2.0D);
+        if (receiverLevel <= bed + 0.05D) {
+            return;
+        }
         target.height = bed;
         target.riverWaterSurfaceHeight = receiverLevel;
         target.riverDepth = Math.max(MINIMUM_WATER_DEPTH, receiverLevel - bed);
