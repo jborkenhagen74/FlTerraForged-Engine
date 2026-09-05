@@ -19,10 +19,20 @@ import java.util.PriorityQueue;
  * depressions and produces spill elevations, so inland sinks become ponds/lakes instead of dead
  * river ends. Each visible D8 edge is then refined against the local terrain into a curved path;
  * therefore the eight grid directions no longer become the visible river geometry.</p>
+ *
+ * <p>R44 adds a receiver-dominant hydraulic solve between the coarse drainage graph and visible
+ * path refinement. Every graph node receives one canonical water level. All incoming and outgoing
+ * segments therefore share exactly the same level at a confluence, while large unavoidable drops
+ * remain explicit cascade/waterfall profiles instead of being represented as disconnected local
+ * river columns.</p>
  */
 public final class RivermapGenerator {
 
     private static final double MAX_WATER_SURFACE_GRADE = 0.18D;
+    private static final double MINIMUM_WATERFALL_DROP = 4.0D;
+    private static final double MINIMUM_CASCADE_DROP = 2.0D;
+    private static final double WATERFALL_DROP_START = 0.66D;
+    private static final double WATERFALL_DROP_END = 0.90D;
 
     private static final int[] DX = {-1, 0, 1, -1, 1, -1, 0, 1};
     private static final int[] DZ = {-1, -1, -1, 0, 0, 1, 1, 1};
@@ -115,7 +125,13 @@ public final class RivermapGenerator {
                         flood.parent());
             }
         }
-        accumulateFlow(downstream, flow);
+        int[] topology = accumulateFlow(downstream, flow);
+        double[] resolvedWater = resolveWaterSurface(
+                downstream,
+                flood.filledHeight(),
+                topology,
+                nodesPerAxis,
+                spacing);
 
         int coreMinX = regionX * settings.regionSize();
         int coreMinZ = regionZ * settings.regionSize();
@@ -160,10 +176,8 @@ public final class RivermapGenerator {
                         settings.maximumDepth(),
                         Math.max(shapeDepth, waterDepth + settings.bankFreeboard()));
 
-                double startWater = flood.filledHeight()[index] - settings.bankFreeboard();
-                double endWater = Math.min(
-                        startWater,
-                        flood.filledHeight()[next] - settings.bankFreeboard());
+                double startWater = resolvedWater[index];
+                double endWater = resolvedWater[next];
                 List<RiverPathPoint> path = refineVisiblePath(
                         startX,
                         startZ,
@@ -174,9 +188,10 @@ public final class RivermapGenerator {
                         startWater,
                         endWater,
                         width);
-                startWater = path.get(0).waterSurfaceHeight();
-                endWater = path.get(path.size() - 1).waterSurfaceHeight();
 
+                // Endpoints deliberately retain the canonical node levels supplied above. This is
+                // the confluence invariant: all segments meeting one drainage node expose exactly
+                // the same hydrologic surface at that node.
                 segments.add(new RiverSegment(
                         startX,
                         startZ,
@@ -315,7 +330,14 @@ public final class RivermapGenerator {
         return best;
     }
 
-    private static void accumulateFlow(int[] downstream, double[] flow) {
+    /**
+     * Accumulates runoff and returns a deterministic upstream-to-downstream topological order.
+     *
+     * @param downstream one downstream index per node, or {@code -1}
+     * @param flow mutable local runoff/accumulated flow array
+     * @return node indexes ordered from headwaters toward receivers
+     */
+    static int[] accumulateFlow(int[] downstream, double[] flow) {
         int[] upstreamCount = new int[downstream.length];
         for (int next : downstream) {
             if (next >= 0) {
@@ -328,8 +350,11 @@ public final class RivermapGenerator {
                 queue.add(index);
             }
         }
+        int[] order = new int[downstream.length];
+        int orderSize = 0;
         while (!queue.isEmpty()) {
             int index = queue.removeFirst();
+            order[orderSize++] = index;
             int next = downstream[index];
             if (next >= 0) {
                 flow[next] += flow[index];
@@ -339,8 +364,56 @@ public final class RivermapGenerator {
                 }
             }
         }
+        if (orderSize != downstream.length) {
+            throw new IllegalStateException("Drainage graph contains a cycle");
+        }
+        return order;
     }
 
+    /**
+     * Resolves one canonical receiver-dominant water level for every drainage node.
+     *
+     * <p>The solve runs from receivers toward headwaters. A source node may be lowered to satisfy
+     * the configured maximum normal river grade, but it can never fall below its receiver. Because
+     * all incident segments subsequently reuse this exact node array, a confluence cannot obtain
+     * different water levels depending on which segment happened to win a local nearest-segment
+     * query.</p>
+     *
+     * @param downstream one downstream index per node, or {@code -1}
+     * @param filled priority-flood elevation for every node
+     * @param topology upstream-to-downstream node order
+     * @param width node-grid width
+     * @param spacing world-space grid spacing
+     * @return canonical water-surface Y per node
+     */
+    double[] resolveWaterSurface(
+            int[] downstream,
+            double[] filled,
+            int[] topology,
+            int width,
+            int spacing) {
+        double[] resolved = new double[filled.length];
+        for (int orderIndex = topology.length - 1; orderIndex >= 0; orderIndex--) {
+            int index = topology[orderIndex];
+            double rawWater = filled[index] - settings.bankFreeboard();
+            int next = downstream[index];
+            if (next < 0) {
+                resolved[index] = rawWater;
+                continue;
+            }
+
+            int gx = index % width;
+            int gz = index / width;
+            int nx = next % width;
+            int nz = next / width;
+            double distance = Math.max(1.0D, Math.hypot(nx - gx, nz - gz) * spacing);
+            double receiver = resolved[next];
+            double maximumNormalSource = receiver
+                    + Math.max(0.10D, distance * MAX_WATER_SURFACE_GRADE);
+            resolved[index] = Math.max(receiver, Math.min(rawWater, maximumNormalSource));
+        }
+        return resolved;
+    }
 
     private static double localRunoff(double temperature, double moisture) {
         double boundedMoisture = Maths.clamp(moisture, 0.0D, 1.0D);
@@ -469,16 +542,35 @@ public final class RivermapGenerator {
                     rightBank);
 
             terrainHeight[index] = center.heightErosion;
+            if (index == 0) {
+                waterHeight[index] = startWaterHeight;
+                continue;
+            }
+            if (index == samples - 1) {
+                waterHeight[index] = endWaterHeight;
+                continue;
+            }
+
             double alpha = index / (double) (samples - 1);
-            double desiredWater = Maths.lerp(startWaterHeight, endWaterHeight, alpha);
+            double desiredWater = hydraulicProfile(startWaterHeight, endWaterHeight, alpha);
             double containmentCeiling = Math.min(
                     center.heightErosion,
                     Math.min(leftBank.heightErosion, rightBank.heightErosion))
                     - settings.bankFreeboard();
-            waterHeight[index] = Math.min(desiredWater, containmentCeiling);
+            // The receiver level is a hard lower bound. A local bank probe may lower the upstream
+            // approach, but it must never create a dip that would require water to rise again before
+            // reaching the shared confluence node.
+            waterHeight[index] = Math.max(
+                    endWaterHeight,
+                    Math.min(desiredWater, containmentCeiling));
         }
 
-        limitWaterSurfaceGrade(pathX, pathZ, waterHeight);
+        double totalDrop = startWaterHeight - endWaterHeight;
+        if (totalDrop < MINIMUM_CASCADE_DROP) {
+            limitNormalWaterSurfaceGrade(pathX, pathZ, waterHeight, startWaterHeight, endWaterHeight);
+        } else {
+            enforceMonotonicWaterSurface(waterHeight, startWaterHeight, endWaterHeight);
+        }
 
         List<RiverPathPoint> path = new ArrayList<>(samples);
         for (int index = 0; index < samples; index++) {
@@ -491,21 +583,74 @@ public final class RivermapGenerator {
         return List.copyOf(path);
     }
 
-    private static void limitWaterSurfaceGrade(
+    private static double hydraulicProfile(
+            double startWaterHeight,
+            double endWaterHeight,
+            double alpha) {
+        double drop = startWaterHeight - endWaterHeight;
+        if (drop < MINIMUM_CASCADE_DROP) {
+            return Maths.lerp(startWaterHeight, endWaterHeight, alpha);
+        }
+        if (drop < MINIMUM_WATERFALL_DROP) {
+            return Maths.lerp(startWaterHeight, endWaterHeight, Maths.smooth(alpha));
+        }
+
+        if (alpha <= WATERFALL_DROP_START) {
+            return startWaterHeight;
+        }
+        if (alpha >= WATERFALL_DROP_END) {
+            return endWaterHeight;
+        }
+        double local = Maths.smooth(Maths.clamp(
+                (alpha - WATERFALL_DROP_START) / (WATERFALL_DROP_END - WATERFALL_DROP_START),
+                0.0D,
+                1.0D));
+        return Maths.lerp(startWaterHeight, endWaterHeight, local);
+    }
+
+    private static void limitNormalWaterSurfaceGrade(
             double[] pathX,
             double[] pathZ,
-            double[] waterHeight) {
-        for (int index = 1; index < waterHeight.length; index++) {
-            waterHeight[index] = Math.min(waterHeight[index - 1], waterHeight[index]);
+            double[] waterHeight,
+            double startWaterHeight,
+            double endWaterHeight) {
+        waterHeight[0] = startWaterHeight;
+        waterHeight[waterHeight.length - 1] = endWaterHeight;
+        for (int index = 1; index < waterHeight.length - 1; index++) {
+            waterHeight[index] = Math.max(
+                    endWaterHeight,
+                    Math.min(waterHeight[index - 1], waterHeight[index]));
         }
-        for (int index = waterHeight.length - 2; index >= 0; index--) {
+        for (int index = waterHeight.length - 2; index > 0; index--) {
             double distance = Math.hypot(
                     pathX[index + 1] - pathX[index],
                     pathZ[index + 1] - pathZ[index]);
             double maximumUpstreamHeight = waterHeight[index + 1]
                     + Math.max(0.10D, distance * MAX_WATER_SURFACE_GRADE);
-            waterHeight[index] = Math.min(waterHeight[index], maximumUpstreamHeight);
+            waterHeight[index] = Math.max(
+                    endWaterHeight,
+                    Math.min(waterHeight[index], maximumUpstreamHeight));
         }
+        for (int index = 1; index < waterHeight.length - 1; index++) {
+            waterHeight[index] = Math.max(
+                    endWaterHeight,
+                    Math.min(waterHeight[index - 1], waterHeight[index]));
+        }
+        waterHeight[0] = startWaterHeight;
+        waterHeight[waterHeight.length - 1] = endWaterHeight;
+    }
+
+    private static void enforceMonotonicWaterSurface(
+            double[] waterHeight,
+            double startWaterHeight,
+            double endWaterHeight) {
+        waterHeight[0] = startWaterHeight;
+        for (int index = 1; index < waterHeight.length - 1; index++) {
+            waterHeight[index] = Math.max(
+                    endWaterHeight,
+                    Math.min(waterHeight[index - 1], waterHeight[index]));
+        }
+        waterHeight[waterHeight.length - 1] = endWaterHeight;
     }
 
     private void lookupTerrain(double x, double z, Cell target) {
