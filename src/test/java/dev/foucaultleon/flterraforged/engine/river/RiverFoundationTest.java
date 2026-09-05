@@ -23,6 +23,9 @@ import org.junit.jupiter.api.Test;
 
 final class RiverFoundationTest {
 
+    private static final double CASCADE_DROP_THRESHOLD = 2.0D;
+    private static final double MAXIMUM_NORMAL_WATER_GRADE = 0.18D;
+
     @Test
     void drainageGraphCreatesDeterministicConnectedChannels() {
         RiverModel first = model(12345L);
@@ -57,7 +60,6 @@ final class RiverFoundationTest {
         assertTrue(cell.riverMask >= 0.0D && cell.riverMask < 1.0D);
     }
 
-
     @Test
     void segmentWaterSurfaceNeverRisesAndStaysBelowRefinedTerrain() {
         RiverSegment segment = model(314159L).map(0, 0).segments().stream()
@@ -76,9 +78,13 @@ final class RiverFoundationTest {
     }
 
     @Test
-    void refinedRiverGradeCannotCreateMultiBlockWaterBreaks() {
+    void ordinaryRefinedRiverGradeCannotCreateMultiBlockWaterBreaks() {
         Rivermap map = model(314159L).map(0, 0);
         for (RiverSegment segment : map.segments()) {
+            double totalDrop = segment.startWaterHeight() - segment.endWaterHeight();
+            if (totalDrop >= CASCADE_DROP_THRESHOLD) {
+                continue;
+            }
             List<RiverPathPoint> path = segment.path();
             for (int index = 1; index < path.size(); index++) {
                 RiverPathPoint previous = path.get(index - 1);
@@ -89,8 +95,37 @@ final class RiverFoundationTest {
                 double drop = previous.waterSurfaceHeight() - current.waterSurfaceHeight();
                 assertTrue(drop >= -1.0E-9D, "river water must not rise downstream");
                 assertTrue(
-                        drop <= horizontalDistance * 0.18D + 1.0E-9D,
-                        "river grade must be rate-limited before block projection");
+                        drop <= horizontalDistance * MAXIMUM_NORMAL_WATER_GRADE + 1.0E-9D,
+                        "ordinary river grade must be rate-limited before block projection");
+            }
+        }
+    }
+
+    @Test
+    void explicitCascadeOrWaterfallRemainsContinuousAndEndsAtReceiverLevel() {
+        Rivermap map = model(314159L).map(0, 0);
+        List<RiverSegment> drops = map.segments().stream()
+                .filter(segment -> segment.startWaterHeight() - segment.endWaterHeight()
+                        >= CASCADE_DROP_THRESHOLD)
+                .toList();
+        assertFalse(drops.isEmpty(), "expected at least one explicit hydraulic drop");
+
+        for (RiverSegment segment : drops) {
+            List<RiverPathPoint> path = segment.path();
+            assertEquals(segment.startWaterHeight(), path.get(0).waterSurfaceHeight(), 1.0E-9D);
+            assertEquals(
+                    segment.endWaterHeight(),
+                    path.get(path.size() - 1).waterSurfaceHeight(),
+                    1.0E-9D);
+            double previous = Double.POSITIVE_INFINITY;
+            for (RiverPathPoint point : path) {
+                assertTrue(
+                        point.waterSurfaceHeight() <= previous + 1.0E-9D,
+                        "cascade/waterfall must remain monotonic downstream");
+                assertTrue(
+                        point.waterSurfaceHeight() >= segment.endWaterHeight() - 1.0E-9D,
+                        "drop profile must never fall below its receiver level");
+                previous = point.waterSurfaceHeight();
             }
         }
     }
@@ -165,7 +200,6 @@ final class RiverFoundationTest {
                     "channel center must remain below its water surface");
         }
     }
-
 
     @Test
     void dryCatchmentsProduceFarFewerLocalChannelsThanWetCatchments() {
@@ -388,7 +422,6 @@ final class RiverFoundationTest {
             target.continentEdge = 0.85D;
         };
     }
-
 
     private static CellLookup climate(double temperature, double moisture, CellLookup terrain) {
         return (x, z, target) -> {
