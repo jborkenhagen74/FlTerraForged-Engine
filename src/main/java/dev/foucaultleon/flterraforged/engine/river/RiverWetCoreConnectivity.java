@@ -23,6 +23,7 @@ public final class RiverWetCoreConnectivity implements CellLookup {
     private static final double MINIMUM_CORE_RADIUS = 1.25D;
     private static final double FRINGE_MAXIMUM_CORRECTION = 8.0D;
     private static final double MINIMUM_WATER_DEPTH = 1.10D;
+    private static final double CHANNEL_MATCH_EPSILON = 1.0E-6D;
 
     private final EngineContext world;
     private final RiverModel delegate;
@@ -49,7 +50,9 @@ public final class RiverWetCoreConnectivity implements CellLookup {
         }
 
         RiverHit hit = delegate.nearest(x, z);
-        if (!hit.present() || !Double.isFinite(hit.waterSurfaceHeight())) {
+        if (!hit.present()
+                || !Double.isFinite(hit.waterSurfaceHeight())
+                || !matchesSelectedChannel(hit, target)) {
             return;
         }
 
@@ -81,6 +84,25 @@ public final class RiverWetCoreConnectivity implements CellLookup {
         target.riverWaterSurfaceHeight = hit.waterSurfaceHeight();
         target.riverFlow = hit.flow();
         target.riverMask = Maths.smooth(Maths.clamp(hit.distance() / halfWidth, 0.0D, 1.0D));
+    }
+
+    private static boolean matchesSelectedChannel(RiverHit hit, Cell target) {
+        // RiverModel already selected the surface-aligned winner and stores its horizontal
+        // properties even when the local ridge guard keeps that column dry. The ordinary nearest
+        // query is used only to recover the water-surface value that was intentionally suppressed
+        // from the dry Cell. Requiring the same projected distance/width/flow prevents a deeper
+        // crossing channel from being resurrected merely because it is geometrically closer in X/Z.
+        return Double.isFinite(target.riverDistance)
+                && Double.isFinite(target.riverWidth)
+                && Double.isFinite(target.riverFlow)
+                && nearlyEqual(hit.distance(), target.riverDistance)
+                && nearlyEqual(hit.width(), target.riverWidth)
+                && nearlyEqual(hit.flow(), target.riverFlow);
+    }
+
+    private static boolean nearlyEqual(double first, double second) {
+        double scale = Math.max(1.0D, Math.max(Math.abs(first), Math.abs(second)));
+        return Math.abs(first - second) <= CHANNEL_MATCH_EPSILON * scale;
     }
 
     private double minimumDepth(double waterSurfaceHeight) {
