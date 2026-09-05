@@ -15,14 +15,16 @@ import java.util.Objects;
  * channel. Final lake and ocean ownership is handled by {@link ReceivingWaterOverlay} after this
  * stage.</p>
  *
- * <p>Lake probes use the cached lake-only field instead of recursively re-running river selection.
- * Non-shore bridges require corroborating lake samples in the same nearest probe ring, preventing a
- * river that merely runs beside a lake from being flattened to the lake surface. A dry lake-shore
- * transition remains dry unless an actual river wet core reaches it.</p>
+ * <p>R42 additionally resolves short confluence seams in Engine space. When neighboring wet-core
+ * probes expose a higher-flow channel at a compatible level, that main stem owns the shared water
+ * plane. Lake and ocean receivers still have higher priority. Receiver water levels switch
+ * authoritatively, while the river bed is raised toward the receiving bed through a bounded mouth
+ * blend. This prevents narrow trenches from continuing into lakes or seas without introducing a
+ * post-generation Minecraft repair pass.</p>
  *
- * <p>All corrections happen in Engine space before Minecraft materialization. No block-provider or
- * platform-specific information is required, so full-block and variable-height materializers see
- * exactly the same hydraulic semantics.</p>
+ * <p>All corrections happen before Minecraft materialization. No block-provider or platform-specific
+ * information is required, so full-block and variable-height materializers see exactly the same
+ * continuous hydraulic semantics.</p>
  */
 public final class RiverWetCoreConnectivity implements CellLookup {
 
@@ -38,6 +40,10 @@ public final class RiverWetCoreConnectivity implements CellLookup {
     private static final double OPEN_WATER_HEIGHT_MARGIN = 3.0D;
     private static final double WATERFALL_MINIMUM_WATER_DROP = 1.25D;
     private static final double WATERFALL_MINIMUM_TERRAIN_HEAD = 2.50D;
+    private static final double MAIN_STEM_MAXIMUM_LEVEL_DELTA = 1.50D;
+    private static final double MAIN_STEM_MINIMUM_FLOW_GAIN = 1.0E-6D;
+    private static final double MOUTH_BLEND_DISTANCE = 12.0D;
+    private static final int MAIN_STEM_MAX_PROBE = 2;
     private static final int LAKE_BRIDGE_MAX_PROBE = 4;
     private static final int[] RECEIVER_PROBES = {1, 2, 4, 8};
     private static final int[] PROBE_X = {-1, 1, 0, 0, -1, 1, -1, 1};
@@ -123,10 +129,39 @@ public final class RiverWetCoreConnectivity implements CellLookup {
 
         double receiverLevel = Double.NaN;
         double receiverBed = Double.NaN;
+        double receiverDistance = Double.POSITIVE_INFINITY;
         int receiverPriority = 0;
         double naturalBed = Double.isFinite(target.heightErosion)
                 ? target.heightErosion
                 : target.height;
+
+        if (isGuaranteedWetCore(target) && Double.isFinite(target.riverFlow)) {
+            MainStemReceiver mainStem = nearbyMainStemReceiver(x, z, target);
+            if (Double.isFinite(mainStem.level())) {
+                receiverLevel = mainStem.level();
+                receiverBed = Math.min(
+                        naturalBed,
+                        mainStem.level() - minimumDepth(mainStem.level()));
+                receiverDistance = mainStem.distance();
+                receiverPriority = ResolvedWaterOwner.RIVER.priority();
+            }
+        }
+
+        int lakeProbeLimit = target.lakeShore
+                ? RECEIVER_PROBES[RECEIVER_PROBES.length - 1]
+                : isGuaranteedWetCore(target) ? LAKE_BRIDGE_MAX_PROBE : 0;
+        if (lakeProbeLimit > 0 && receiverPriority < ResolvedWaterOwner.LAKE.priority()) {
+            LakeReceiver lake = nearbyLakeReceiver(x, z, currentLevel, lakeProbeLimit);
+            boolean corroborated = target.lakeShore || lake.samples() >= 2;
+            if (corroborated && Double.isFinite(lake.level())) {
+                receiverLevel = lake.level();
+                receiverBed = Math.min(
+                        naturalBed,
+                        lake.level() - Math.max(MINIMUM_WATER_DEPTH, lake.minimumDepth()));
+                receiverDistance = lake.distance();
+                receiverPriority = ResolvedWaterOwner.LAKE.priority();
+            }
+        }
 
         if (isOpenOceanReceiver(target)) {
             receiverLevel = world.seaLevel();
@@ -135,22 +170,8 @@ public final class RiverWetCoreConnectivity implements CellLookup {
             receiverBed = Math.min(
                     naturalBed,
                     receiverLevel - MINIMUM_WATER_DEPTH);
-            receiverPriority = 3;
-        }
-
-        int lakeProbeLimit = target.lakeShore
-                ? RECEIVER_PROBES[RECEIVER_PROBES.length - 1]
-                : isGuaranteedWetCore(target) ? LAKE_BRIDGE_MAX_PROBE : 0;
-        if (lakeProbeLimit > 0 && receiverPriority < 2) {
-            LakeReceiver lake = nearbyLakeReceiver(x, z, currentLevel, lakeProbeLimit);
-            boolean corroborated = target.lakeShore || lake.samples() >= 2;
-            if (corroborated && Double.isFinite(lake.level())) {
-                receiverLevel = lake.level();
-                receiverBed = Math.min(
-                        naturalBed,
-                        lake.level() - Math.max(MINIMUM_WATER_DEPTH, lake.minimumDepth()));
-                receiverPriority = 2;
-            }
+            receiverDistance = 0.0D;
+            receiverPriority = ResolvedWaterOwner.OCEAN.priority();
         }
 
         if (receiverPriority == 0 || !Double.isFinite(receiverLevel)) {
@@ -162,9 +183,11 @@ public final class RiverWetCoreConnectivity implements CellLookup {
 
         double fallbackBed = receiverLevel - MINIMUM_WATER_DEPTH;
         double desiredBed = Double.isFinite(receiverBed) ? receiverBed : fallbackBed;
+        double blend = mouthBlend(receiverDistance);
+        double blendedBed = Maths.lerp(target.height, desiredBed, blend);
         // Receiver alignment may fill/raise an over-incised river mouth, never deepen it further.
         double bed = Maths.clamp(
-                Math.max(target.height, desiredBed),
+                Math.max(target.height, blendedBed),
                 world.minY() + 1.0D,
                 world.maxYExclusive() - 2.0D);
         if (receiverLevel <= bed + 0.05D) {
@@ -172,7 +195,71 @@ public final class RiverWetCoreConnectivity implements CellLookup {
         }
         target.height = bed;
         target.riverWaterSurfaceHeight = receiverLevel;
-        target.riverDepth = Math.max(MINIMUM_WATER_DEPTH, receiverLevel - bed);
+        target.riverDepth = receiverLevel - bed;
+    }
+
+    private MainStemReceiver nearbyMainStemReceiver(int x, int z, Cell target) {
+        double currentLevel = target.riverWaterSurfaceHeight;
+        double currentFlow = target.riverFlow;
+        MainStemReceiver best = MainStemReceiver.NONE;
+        for (int distance = 1; distance <= MAIN_STEM_MAX_PROBE; distance++) {
+            for (int direction = 0; direction < PROBE_X.length; direction++) {
+                RiverHit hit = delegate.nearest(
+                        x + PROBE_X[direction] * distance,
+                        z + PROBE_Z[direction] * distance);
+                if (!hit.present()
+                        || !Double.isFinite(hit.waterSurfaceHeight())
+                        || !Double.isFinite(hit.flow())
+                        || hit.flow() <= currentFlow + MAIN_STEM_MINIMUM_FLOW_GAIN) {
+                    continue;
+                }
+                double halfWidth = Math.max(0.5D, hit.width() * 0.5D);
+                if (hit.distance() > halfWidth * WET_CHANNEL_RADIUS + CHANNEL_MATCH_EPSILON) {
+                    continue;
+                }
+                if (Math.abs(hit.waterSurfaceHeight() - currentLevel)
+                        > MAIN_STEM_MAXIMUM_LEVEL_DELTA) {
+                    continue;
+                }
+                if (betterMainStem(hit, distance, best)) {
+                    best = new MainStemReceiver(
+                            hit.waterSurfaceHeight(),
+                            hit.flow(),
+                            hit.width(),
+                            distance);
+                }
+            }
+            if (Double.isFinite(best.level())) {
+                return best;
+            }
+        }
+        return best;
+    }
+
+    private static boolean betterMainStem(
+            RiverHit candidate,
+            int distance,
+            MainStemReceiver current) {
+        if (!Double.isFinite(current.level())) {
+            return true;
+        }
+        if (candidate.flow() > current.flow() + RECEIVER_SELECTION_EPSILON) {
+            return true;
+        }
+        if (Math.abs(candidate.flow() - current.flow()) > RECEIVER_SELECTION_EPSILON) {
+            return false;
+        }
+        if (candidate.width() > current.width() + RECEIVER_SELECTION_EPSILON) {
+            return true;
+        }
+        if (Math.abs(candidate.width() - current.width()) > RECEIVER_SELECTION_EPSILON) {
+            return false;
+        }
+        if (distance < current.distance()) {
+            return true;
+        }
+        return distance == current.distance()
+                && candidate.waterSurfaceHeight() < current.level();
     }
 
     private boolean isOpenOceanReceiver(Cell target) {
@@ -227,10 +314,20 @@ public final class RiverWetCoreConnectivity implements CellLookup {
                 }
             }
             if (samples > 0) {
-                return new LakeReceiver(bestLevel, bestMinimumDepth, samples);
+                return new LakeReceiver(bestLevel, bestMinimumDepth, samples, distance);
             }
         }
         return LakeReceiver.NONE;
+    }
+
+    private static double mouthBlend(double receiverDistance) {
+        if (!Double.isFinite(receiverDistance) || receiverDistance <= 0.0D) {
+            return 1.0D;
+        }
+        return Maths.smooth(Maths.clamp(
+                1.0D - receiverDistance / MOUTH_BLEND_DISTANCE,
+                0.0D,
+                1.0D));
     }
 
     private static boolean preserveWaterfallApproach(
@@ -277,7 +374,27 @@ public final class RiverWetCoreConnectivity implements CellLookup {
         return Math.max(MINIMUM_WATER_DEPTH, target);
     }
 
-    private record LakeReceiver(double level, double minimumDepth, int samples) {
-        private static final LakeReceiver NONE = new LakeReceiver(Double.NaN, Double.NaN, 0);
+    private record LakeReceiver(
+            double level,
+            double minimumDepth,
+            int samples,
+            int distance) {
+        private static final LakeReceiver NONE = new LakeReceiver(
+                Double.NaN,
+                Double.NaN,
+                0,
+                Integer.MAX_VALUE);
+    }
+
+    private record MainStemReceiver(
+            double level,
+            double flow,
+            double width,
+            int distance) {
+        private static final MainStemReceiver NONE = new MainStemReceiver(
+                Double.NaN,
+                Double.NaN,
+                0.0D,
+                Integer.MAX_VALUE);
     }
 }
