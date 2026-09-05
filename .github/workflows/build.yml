@@ -1,8 +1,8 @@
-name: Build R41
+name: Build R42
 
 on:
   push:
-    branches: [ 'revision/r41-startup-liveness' ]
+    branches: [ 'revision/r42-resolved-water-field' ]
   workflow_dispatch:
 
 permissions:
@@ -10,12 +10,12 @@ permissions:
 
 jobs:
   check:
-    name: Check R41 startup liveness against R50 API
+    name: Check R42 resolved water field against R52 API
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
-      - name: Checkout Engine R41
+      - name: Checkout Engine R42
         uses: actions/checkout@v6
 
       - name: Install Java 17 toolchain
@@ -38,26 +38,29 @@ jobs:
         with:
           gradle-version: '9.7.1'
 
-      - name: Verify R41 startup and retained receiver wiring
+      - name: Verify inherited R41 startup liveness
         run: python3 tools/verify-r41-startup-liveness.py
 
-      - name: Checkout R50 host API source
+      - name: Verify R42 resolved water field
+        run: python3 tools/verify-r42-resolved-water-field.py
+
+      - name: Checkout R52 host API source
         uses: actions/checkout@v6
         with:
           repository: jborkenhagen74/FlTerraForged
-          ref: b2dd8e8f90c5c12d0fa1968952d1ceb23b465ce5
-          path: .ci/flterraforged-r50
+          ref: revision/r52-resolved-water-field
+          path: .ci/flterraforged-r52
 
-      - name: Build R50 Engine API local repository
-        run: gradle -p .ci/flterraforged-r50 -Dorg.gradle.java.installations.paths="$FLTERRAFORGED_JAVA17_HOME,$JAVA_HOME" --no-daemon --warning-mode all :engine-api:publish
+      - name: Build R52 Engine API local repository
+        run: gradle -p .ci/flterraforged-r52 -Dorg.gradle.java.installations.paths="$FLTERRAFORGED_JAVA17_HOME,$JAVA_HOME" --no-daemon --warning-mode all :engine-api:publish
 
-      - name: Build and test R41 against R50 Engine API
+      - name: Build and test R42 against R52 Engine API
         env:
-          FLTERRAFORGED_API_LOCAL_REPOSITORY: ${{ github.workspace }}/.ci/flterraforged-r50/build/maven-repository
+          FLTERRAFORGED_API_LOCAL_REPOSITORY: ${{ github.workspace }}/.ci/flterraforged-r52/build/maven-repository
         run: gradle -Dorg.gradle.java.installations.paths="$FLTERRAFORGED_JAVA17_HOME,$JAVA_HOME" --no-daemon --refresh-dependencies --warning-mode all clean check jar
 
-      - name: Collect R41 runtime JAR
-        id: collect_engine_r41
+      - name: Collect R42 runtime JAR
+        id: collect_engine_r42
         shell: bash
         run: |
           set -euo pipefail
@@ -73,39 +76,38 @@ jobs:
           fi
           short_sha="${GITHUB_SHA:0:7}"
           mkdir -p build/artifacts
-          path="build/artifacts/FlTerraForged-Engine-R41-${short_sha}.jar"
+          path="build/artifacts/FlTerraForged-Engine-R42-${short_sha}.jar"
           cp "${jars[0]}" "$path"
           echo "artifact_path=$path" >> "$GITHUB_OUTPUT"
           echo "jar_name=$(basename "$path")" >> "$GITHUB_OUTPUT"
 
-      - name: Upload R41 runtime JAR
-        id: upload_engine_r41
+      - name: Upload R42 runtime JAR
+        id: upload_engine_r42
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: FlTerraForged-Engine-R41
-          path: ${{ steps.collect_engine_r41.outputs.artifact_path }}
+          name: FlTerraForged-Engine-R42
+          path: ${{ steps.collect_engine_r42.outputs.artifact_path }}
           archive: false
           if-no-files-found: error
           retention-days: 30
 
-      - name: Add R41 artifact link to job summary
+      - name: Add R42 artifact link to job summary
         shell: bash
         env:
-          ARTIFACT_URL: ${{ steps.upload_engine_r41.outputs.artifact-url }}
-          ARTIFACT_DIGEST: ${{ steps.upload_engine_r41.outputs.artifact-digest }}
-          JAR_NAME: ${{ steps.collect_engine_r41.outputs.jar_name }}
+          ARTIFACT_URL: ${{ steps.upload_engine_r42.outputs.artifact-url }}
+          ARTIFACT_DIGEST: ${{ steps.upload_engine_r42.outputs.artifact-digest }}
+          JAR_NAME: ${{ steps.collect_engine_r42.outputs.jar_name }}
         run: |
           {
-            echo "### FlTerraForged Engine R41"
+            echo "### FlTerraForged Engine R42"
             echo
             echo "- JAR: \`$JAR_NAME\`"
-            echo "- Host API validation: FlTerraForged R50"
-            echo "- Coarse drainage planning: pre-erosion base terrain"
-            echo "- Final river incision: post-erosion terrain"
-            echo "- Final order: river -> wet-core -> receiver overlay"
-            echo "- R40 receiver ownership: retained"
-            echo "- Erosion, river-map and final-sample cold misses: inline single-flight"
-            echo "- Cold environment/tile startup tests: enabled with hard timeouts"
+            echo "- Host API validation: FlTerraForged R52"
+            echo "- Final hydraulic ownership: OCEAN > LAKE > RIVER > DRY"
+            echo "- River joins: deterministic higher-flow main-stem ownership"
+            echo "- River mouths: receiver surface authority with bounded bed blend"
+            echo "- Final order: river -> wet-core/main-stem -> resolved water field -> climate/classification"
+            echo "- R41 bounded inline single-flight caches: retained"
             echo "- Worldgen executor scheduling from cache loaders: none"
             echo "- Post-generation repair pass: none"
             echo "- SHA-256: \`$ARTIFACT_DIGEST\`"
