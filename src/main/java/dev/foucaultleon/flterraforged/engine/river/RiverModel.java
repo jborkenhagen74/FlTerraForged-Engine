@@ -4,16 +4,16 @@ import dev.foucaultleon.flterraforged.engine.api.EngineContext;
 import dev.foucaultleon.flterraforged.engine.api.river.RiverSample;
 import dev.foucaultleon.flterraforged.engine.cell.Cell;
 import dev.foucaultleon.flterraforged.engine.cell.CellLookup;
+import dev.foucaultleon.flterraforged.engine.internal.InlineSingleFlightCache;
 import dev.foucaultleon.flterraforged.engine.internal.Maths;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.Objects;
 
 /**
  * Thread-safe hydrology facade backed by cached immutable river maps.
  *
- * <p>Linear channels and depression-filled inland water are resolved together. The map generation
- * itself remains immutable and happens outside the cache lock.</p>
+ * <p>Linear channels and depression-filled inland water are resolved together. Missing river maps
+ * use synchronous single-flight ownership, so concurrent world-generation threads requesting the
+ * same region share one direct computation instead of generating duplicate drainage graphs.</p>
  */
 public final class RiverModel implements CellLookup {
 
@@ -32,7 +32,7 @@ public final class RiverModel implements CellLookup {
     private final CellLookup erodedTerrain;
     private final RiverSettings settings;
     private final RivermapGenerator generator;
-    private final MapCache cache;
+    private final InlineSingleFlightCache<Long, Rivermap> cache;
 
     /**
      * Creates a river model.
@@ -82,7 +82,7 @@ public final class RiverModel implements CellLookup {
                 Objects.requireNonNull(drainageTerrain, "drainageTerrain"),
                 drainageClimate,
                 settings);
-        this.cache = new MapCache(settings.cacheSize());
+        this.cache = new InlineSingleFlightCache<>(settings.cacheSize());
     }
 
     /**
@@ -381,23 +381,7 @@ public final class RiverModel implements CellLookup {
      */
     public Rivermap map(int regionX, int regionZ) {
         long key = (((long) regionX) << 32) ^ (regionZ & 0xFFFFFFFFL);
-        Rivermap map;
-        synchronized (cache) {
-            map = cache.get(key);
-        }
-        if (map == null) {
-            Rivermap generated = generator.generate(regionX, regionZ);
-            synchronized (cache) {
-                Rivermap existing = cache.get(key);
-                if (existing == null) {
-                    cache.put(key, generated);
-                    map = generated;
-                } else {
-                    map = existing;
-                }
-            }
-        }
-        return map;
+        return cache.get(key, () -> generator.generate(regionX, regionZ));
     }
 
     /** Returns the nearest lake-only sample without re-running river selection. */
@@ -428,21 +412,5 @@ public final class RiverModel implements CellLookup {
             }
         }
         return best;
-    }
-
-    private static final class MapCache extends LinkedHashMap<Long, Rivermap> {
-
-        private static final long serialVersionUID = 1L;
-        private final int maximumSize;
-
-        MapCache(int maximumSize) {
-            super(maximumSize + 1, 0.75F, true);
-            this.maximumSize = maximumSize;
-        }
-
-        @Override
-        protected boolean removeEldestEntry(Map.Entry<Long, Rivermap> eldest) {
-            return size() > maximumSize;
-        }
     }
 }
