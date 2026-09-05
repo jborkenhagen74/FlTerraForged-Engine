@@ -1,10 +1,8 @@
-name: Build
+name: Build R38
 
 on:
   push:
-    branches: [ develop, main, 'revision/**' ]
-  pull_request:
-    branches: [ develop, main ]
+    branches: [ 'revision/r38-water-authority-riparian' ]
   workflow_dispatch:
 
 permissions:
@@ -12,12 +10,12 @@ permissions:
 
 jobs:
   check:
-    name: Check
+    name: Check R38 against R47 API
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
-      - name: Checkout Engine
+      - name: Checkout Engine R38
         uses: actions/checkout@v6
 
       - name: Install Java 17 toolchain
@@ -40,79 +38,26 @@ jobs:
         with:
           gradle-version: '9.7.1'
 
-      - name: Verify Engine layout
-        if: github.ref != 'refs/heads/revision/r36-final-wet-envelope' && github.ref != 'refs/heads/revision/r37-river-wet-core-connectivity'
-        run: python3 tools/verify-layout.py
+      - name: Verify Engine R38 receiving-water authority
+        run: python3 tools/verify-r38-water-authority.py
 
-      - name: Verify Engine R37 wet-core connectivity
-        if: github.ref == 'refs/heads/revision/r37-river-wet-core-connectivity'
-        run: python3 tools/verify-r37-wet-core.py
-
-      - name: Verify Engine R36 final wet support
-        if: github.ref == 'refs/heads/revision/r36-final-wet-envelope'
-        run: python3 tools/verify-r36-final-wet.py
-
-      - name: Checkout R46 host API source
-        if: github.ref == 'refs/heads/revision/r37-river-wet-core-connectivity'
+      - name: Checkout R47 host API source
         uses: actions/checkout@v6
         with:
           repository: jborkenhagen74/FlTerraForged
-          ref: revision/r46-owned-carver
-          path: .ci/flterraforged-r46
+          ref: revision/r47-hydraulic-shores
+          path: .ci/flterraforged-r47
 
-      - name: Build R46 Engine API local repository
-        if: github.ref == 'refs/heads/revision/r37-river-wet-core-connectivity'
-        run: gradle -p .ci/flterraforged-r46 -Dorg.gradle.java.installations.paths="$FLTERRAFORGED_JAVA17_HOME,$JAVA_HOME" --no-daemon --warning-mode all :engine-api:publish
+      - name: Build R47 Engine API local repository
+        run: gradle -p .ci/flterraforged-r47 -Dorg.gradle.java.installations.paths="$FLTERRAFORGED_JAVA17_HOME,$JAVA_HOME" --no-daemon --warning-mode all :engine-api:publish
 
-      - name: Build and test R37 against R46 Engine API
-        if: github.ref == 'refs/heads/revision/r37-river-wet-core-connectivity'
+      - name: Build and test R38 against R47 Engine API
         env:
-          FLTERRAFORGED_API_LOCAL_REPOSITORY: ${{ github.workspace }}/.ci/flterraforged-r46/build/maven-repository
+          FLTERRAFORGED_API_LOCAL_REPOSITORY: ${{ github.workspace }}/.ci/flterraforged-r47/build/maven-repository
         run: gradle -Dorg.gradle.java.installations.paths="$FLTERRAFORGED_JAVA17_HOME,$JAVA_HOME" --no-daemon --refresh-dependencies --warning-mode all clean check jar
 
-      - name: Checkout R45 host API source
-        if: github.ref == 'refs/heads/revision/r36-final-wet-envelope'
-        uses: actions/checkout@v6
-        with:
-          repository: jborkenhagen74/FlTerraForged
-          ref: revision/r45-final-wet-reconciliation
-          path: .ci/flterraforged-r45
-
-      - name: Build R45 Engine API local repository
-        if: github.ref == 'refs/heads/revision/r36-final-wet-envelope'
-        run: gradle -p .ci/flterraforged-r45 -Dorg.gradle.java.installations.paths="$FLTERRAFORGED_JAVA17_HOME,$JAVA_HOME" --no-daemon --warning-mode all :engine-api:publish
-
-      - name: Build and test R36 against R45 Engine API
-        if: github.ref == 'refs/heads/revision/r36-final-wet-envelope'
-        env:
-          FLTERRAFORGED_API_LOCAL_REPOSITORY: ${{ github.workspace }}/.ci/flterraforged-r45/build/maven-repository
-        run: gradle -Dorg.gradle.java.installations.paths="$FLTERRAFORGED_JAVA17_HOME,$JAVA_HOME" --no-daemon --refresh-dependencies --warning-mode all clean check jar
-
-      - name: Checkout R44 host API source
-        if: github.ref == 'refs/heads/revision/r35-dry-coast-semantics'
-        uses: actions/checkout@v6
-        with:
-          repository: jborkenhagen74/FlTerraForged
-          ref: revision/r44-coast-hydrology-performance-biomes
-          path: .ci/flterraforged-r44
-
-      - name: Build R44 Engine API local repository
-        if: github.ref == 'refs/heads/revision/r35-dry-coast-semantics'
-        run: gradle -p .ci/flterraforged-r44 -Dorg.gradle.java.installations.paths="$FLTERRAFORGED_JAVA17_HOME,$JAVA_HOME" --no-daemon --warning-mode all :engine-api:publish
-
-      - name: Build and test R35 against R44 Engine API
-        if: github.ref == 'refs/heads/revision/r35-dry-coast-semantics'
-        env:
-          FLTERRAFORGED_API_LOCAL_REPOSITORY: ${{ github.workspace }}/.ci/flterraforged-r44/build/maven-repository
-        run: gradle -Dorg.gradle.java.installations.paths="$FLTERRAFORGED_JAVA17_HOME,$JAVA_HOME" --no-daemon --refresh-dependencies --warning-mode all clean check jar
-
-      - name: Build and test against public Engine API Maven repository
-        if: github.ref != 'refs/heads/revision/r35-dry-coast-semantics' && github.ref != 'refs/heads/revision/r36-final-wet-envelope' && github.ref != 'refs/heads/revision/r37-river-wet-core-connectivity'
-        run: gradle -Dorg.gradle.java.installations.paths="$FLTERRAFORGED_JAVA17_HOME,$JAVA_HOME" --no-daemon --refresh-dependencies --warning-mode all clean check
-
-      - name: Collect R37 runtime JAR
-        if: github.ref == 'refs/heads/revision/r37-river-wet-core-connectivity'
-        id: collect_engine_r37
+      - name: Collect R38 runtime JAR
+        id: collect_engine_r38
         shell: bash
         run: |
           set -euo pipefail
@@ -128,83 +73,35 @@ jobs:
           fi
           short_sha="${GITHUB_SHA:0:7}"
           mkdir -p build/artifacts
-          path="build/artifacts/FlTerraForged-Engine-R37-${short_sha}.jar"
+          path="build/artifacts/FlTerraForged-Engine-R38-${short_sha}.jar"
           cp "${jars[0]}" "$path"
           echo "artifact_path=$path" >> "$GITHUB_OUTPUT"
+          echo "jar_name=$(basename "$path")" >> "$GITHUB_OUTPUT"
 
-      - name: Upload R37 runtime JAR
-        if: github.ref == 'refs/heads/revision/r37-river-wet-core-connectivity'
+      - name: Upload R38 runtime JAR
+        id: upload_engine_r38
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: FlTerraForged-Engine-R37
-          path: ${{ steps.collect_engine_r37.outputs.artifact_path }}
+          name: FlTerraForged-Engine-R38
+          path: ${{ steps.collect_engine_r38.outputs.artifact_path }}
           archive: false
           if-no-files-found: error
           retention-days: 30
 
-      - name: Collect R36 runtime JAR
-        if: github.ref == 'refs/heads/revision/r36-final-wet-envelope'
-        id: collect_engine_r36
+      - name: Add R38 artifact link to job summary
         shell: bash
+        env:
+          ARTIFACT_URL: ${{ steps.upload_engine_r38.outputs.artifact-url }}
+          ARTIFACT_DIGEST: ${{ steps.upload_engine_r38.outputs.artifact-digest }}
+          JAR_NAME: ${{ steps.collect_engine_r38.outputs.jar_name }}
         run: |
-          set -euo pipefail
-          mapfile -t jars < <(
-            find build/libs -maxdepth 1 -type f -name '*.jar' \
-              ! -name '*-sources.jar' \
-              ! -name '*-javadoc.jar' \
-              -print | sort
-          )
-          if [ "${#jars[@]}" -ne 1 ]; then
-            echo "::error::Expected one Engine runtime JAR, found ${#jars[@]}."
-            exit 1
-          fi
-          short_sha="${GITHUB_SHA:0:7}"
-          mkdir -p build/artifacts
-          path="build/artifacts/FlTerraForged-Engine-R36-${short_sha}.jar"
-          cp "${jars[0]}" "$path"
-          echo "artifact_path=$path" >> "$GITHUB_OUTPUT"
-
-      - name: Upload R36 runtime JAR
-        if: github.ref == 'refs/heads/revision/r36-final-wet-envelope'
-        uses: actions/upload-artifact@v7.0.1
-        with:
-          name: FlTerraForged-Engine-R36
-          path: ${{ steps.collect_engine_r36.outputs.artifact_path }}
-          archive: false
-          if-no-files-found: error
-          retention-days: 30
-
-  publish-engine-snapshot:
-    name: Publish Engine Snapshot
-    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
-    needs: check
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Set up Java 17
-        uses: actions/setup-java@v6
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v6
-        with:
-          gradle-version: '9.7.1'
-
-      - name: Build Maven repository
-        run: gradle --no-daemon --refresh-dependencies publish
-
-      - name: Publish Maven repository branch
-        uses: peaceiris/actions-gh-pages@v4.1.0
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_branch: maven
-          publish_dir: ./build/maven-repository
-          keep_files: true
-          force_orphan: false
-          commit_message: "Publish Engine ${{ github.sha }}"
+          {
+            echo "### FlTerraForged Engine R38"
+            echo
+            echo "- JAR: \`$JAR_NAME\`"
+            echo "- Host API validation: FlTerraForged R47"
+            echo "- Receiving water authority: ocean/lake over incoming river"
+            echo "- Waterfall preservation: enabled"
+            echo "- SHA-256: \`$ARTIFACT_DIGEST\`"
+            echo "- [Download artifact]($ARTIFACT_URL)"
+          } >> "$GITHUB_STEP_SUMMARY"
