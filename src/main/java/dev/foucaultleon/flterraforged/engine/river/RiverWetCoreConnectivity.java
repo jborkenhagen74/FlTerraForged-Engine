@@ -19,7 +19,8 @@ import java.util.Objects;
  * column is not classified as {@code lake_shore}. Lake probes use the cached lake-only field instead
  * of recursively re-running river selection. Non-shore bridges require corroborating lake samples
  * in the same nearest probe ring, preventing a river that merely runs beside a lake from being
- * flattened to the lake surface.</p>
+ * flattened to the lake surface. A dry lake-shore transition remains dry unless an actual river wet
+ * core reaches it.</p>
  *
  * <p>All corrections happen in Engine space before Minecraft materialization. No block-provider or
  * platform-specific information is required, so full-block and variable-height materializers see
@@ -32,6 +33,7 @@ public final class RiverWetCoreConnectivity implements CellLookup {
     private static final double MINIMUM_CORE_RADIUS = 1.25D;
     private static final double FRINGE_MAXIMUM_CORRECTION = 8.0D;
     private static final double MINIMUM_WATER_DEPTH = 1.10D;
+    private static final double DRY_SHORE_MAXIMUM_DEPTH = 0.05D;
     private static final double CHANNEL_MATCH_EPSILON = 1.0E-6D;
     private static final double RECEIVER_SELECTION_EPSILON = 1.0E-6D;
     private static final double OPEN_WATER_CONTINENT_EDGE = 0.14D;
@@ -64,6 +66,9 @@ public final class RiverWetCoreConnectivity implements CellLookup {
         delegate.lookup(x, z, target);
 
         if (target.lake) {
+            return;
+        }
+        if (target.lakeShore && target.riverDepth <= DRY_SHORE_MAXIMUM_DEPTH) {
             return;
         }
         if (Double.isFinite(target.riverWaterSurfaceHeight)) {
