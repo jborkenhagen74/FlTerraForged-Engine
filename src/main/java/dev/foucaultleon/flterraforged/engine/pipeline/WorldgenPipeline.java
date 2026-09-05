@@ -24,6 +24,7 @@ import dev.foucaultleon.flterraforged.engine.noise.Interpolation;
 import dev.foucaultleon.flterraforged.engine.noise.Noise;
 import dev.foucaultleon.flterraforged.engine.noise.Noise2D;
 import dev.foucaultleon.flterraforged.engine.noise.SeededNoise2D;
+import dev.foucaultleon.flterraforged.engine.river.ReceivingWaterOverlay;
 import dev.foucaultleon.flterraforged.engine.river.RiverModel;
 import dev.foucaultleon.flterraforged.engine.river.RiverSettings;
 import dev.foucaultleon.flterraforged.engine.river.RiverWetCoreConnectivity;
@@ -39,9 +40,12 @@ import java.util.Objects;
 /**
  * Fully assembled, immutable world-generation pipeline for one world seed.
  *
- * <p>The class is the single composition root for all engine stages. It guarantees the ordering
- * {@code continent -> terrain -> erosion -> climate-runoff -> river -> wet-core connectivity -> climate}
- * and prevents individual stages from being accidentally wired against different continent or terrain sources.</p>
+ * <p>The class is the single composition root for all engine stages. R40 resolves the physical
+ * terrain in the order {@code continent -> terrain -> erosion -> river -> wet-core -> receiver overlay}
+ * before final climate and classification. Drainage topology and visible river geometry now use the
+ * same post-erosion terrain that is actually incised. Ocean and lake receiver regions are then
+ * re-applied after river shaping, so an incoming river cannot overwrite the receiving water body's
+ * bed or water level.</p>
  */
 public final class WorldgenPipeline implements CellLookup {
 
@@ -122,14 +126,29 @@ public final class WorldgenPipeline implements CellLookup {
                 climateRegions,
                 climateSettings);
 
+        TerrainClassificationSettings classificationSettings =
+                TerrainClassificationSettings.from(settings);
+
+        // R40 uses the post-erosion surface both for drainage topology and for the surface that is
+        // actually incised. This removes the previous base-terrain/post-erosion disagreement at
+        // lake and ocean transitions.
         RiverModel riverModel = new RiverModel(
                 seed ^ RIVER_SEED,
                 context,
                 erosion,
-                baseLookup,
+                erosion,
                 drainageClimate,
                 RiverSettings.from(settings));
-        this.river = new RiverWetCoreConnectivity(context, riverModel);
+        CellLookup connectedRiver = new RiverWetCoreConnectivity(context, riverModel);
+
+        // Receiver masks are known by the hydrology model, but their geometry is applied last. The
+        // final overlay restores the immutable post-erosion ocean/lake bed after river shaping.
+        this.river = new ReceivingWaterOverlay(
+                context,
+                erosion,
+                riverModel,
+                connectedRiver,
+                classificationSettings);
         this.terrain = new TerrainModel(context, river);
         this.climate = new ClimateModel(
                 context,
@@ -138,7 +157,7 @@ public final class WorldgenPipeline implements CellLookup {
                 moistureNoise,
                 climateRegions,
                 climateSettings);
-        this.classifier = new TerrainClassifier(TerrainClassificationSettings.from(settings));
+        this.classifier = new TerrainClassifier(classificationSettings);
     }
 
     /** {@inheritDoc} */
@@ -191,7 +210,7 @@ public final class WorldgenPipeline implements CellLookup {
     /**
      * Produces a placement-time terrain/hydrology sample without final climate or gradient work.
      *
-     * <p>The method performs one post-erosion river/lake lookup and final semantic classification.
+     * <p>The method performs one final post-receiver hydrology lookup and semantic classification.
      * It intentionally does not call {@link #sampleCell(int, int)}, {@link ClimateModel#lookup(int,
      * int, Cell)} on the final climate model, or the four neighboring surface lookups needed for
      * local gradient. Ocean/coast/river/lake classification occurs before the slope-dependent land
@@ -239,10 +258,10 @@ public final class WorldgenPipeline implements CellLookup {
     /**
      * Generates one square tile of final samples while sharing the one-block gradient border.
      *
-     * <p>A normal point sample needs four additional post-river height lookups to derive its local
-     * gradient. Bulk generation instead evaluates a single one-block border around the tile and
-     * reuses those completed cells for every interior gradient. For a 16x16 tile this reduces the
-     * hydrology-bearing lookups used by slope calculation from 1280 to 324 before cache reuse is
+     * <p>A normal point sample needs four additional post-hydrology height lookups to derive its
+     * local gradient. Bulk generation instead evaluates a single one-block border around the tile
+     * and reuses those completed cells for every interior gradient. For a 16x16 tile this reduces
+     * the hydrology-bearing lookups used by slope calculation from 1280 to 324 before cache reuse is
      * considered.</p>
      *
      * @param originX minimum world X coordinate of the tile
@@ -281,7 +300,7 @@ public final class WorldgenPipeline implements CellLookup {
     }
 
     /**
-     * Samples only the final post-river surface height without running climate.
+     * Samples only the final post-receiver surface height without running climate.
      *
      * @param x world X coordinate
      * @param z world Z coordinate
