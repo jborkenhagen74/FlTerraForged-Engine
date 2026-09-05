@@ -38,10 +38,7 @@ jobs:
         with:
           gradle-version: '9.7.1'
 
-      - name: Verify inherited Engine R40 receiver overlay
-        run: python3 tools/verify-r40-receiver-overlay.py
-
-      - name: Verify R41 startup wiring
+      - name: Verify R41 startup and retained receiver wiring
         run: python3 tools/verify-r41-startup-liveness.py
 
       - name: Checkout R50 host API source
@@ -107,7 +104,7 @@ jobs:
             echo "- Final river incision: post-erosion terrain"
             echo "- Final order: river -> wet-core -> receiver overlay"
             echo "- R40 receiver ownership: retained"
-            echo "- Erosion and final-sample cold misses: inline single-flight"
+            echo "- Erosion, river-map and final-sample cold misses: inline single-flight"
             echo "- Cold environment/tile startup tests: enabled with hard timeouts"
             echo "- Worldgen executor scheduling from cache loaders: none"
             echo "- Post-generation repair pass: none"
