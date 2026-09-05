@@ -400,6 +400,11 @@ public final class RiverModel implements CellLookup {
         return map;
     }
 
+    /** Returns the nearest lake-only sample without re-running river selection. */
+    LakeHit lake(int x, int z) {
+        return nearestLake(x, z);
+    }
+
     private LakeHit nearestLake(int x, int z) {
         int regionX = Math.floorDiv(x, settings.regionSize());
         int regionZ = Math.floorDiv(z, settings.regionSize());
