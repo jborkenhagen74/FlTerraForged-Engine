@@ -7,12 +7,13 @@ import dev.foucaultleon.flterraforged.engine.api.terrain.TerrainSample;
 import dev.foucaultleon.flterraforged.engine.pipeline.WorldgenPipeline;
 import java.util.Objects;
 
-/** Seed-bound, deterministic and thread-safe world sampler with shared final-sample caching. */
+/** Seed-bound, deterministic and thread-safe world sampler with shared bounded caching. */
 public final class DefaultTerrainWorld implements TerrainWorld {
 
     private final EngineContext context;
     private final WorldgenPipeline pipeline;
     private final WorldSampleCache sampleCache;
+    private final EnvironmentSampleCache environmentCache;
 
     /**
      * Creates a deterministic terrain view for one world.
@@ -24,6 +25,7 @@ public final class DefaultTerrainWorld implements TerrainWorld {
         this.context = Objects.requireNonNull(context, "context");
         this.pipeline = new WorldgenPipeline(context, Objects.requireNonNull(settings, "settings"));
         this.sampleCache = new WorldSampleCache(pipeline);
+        this.environmentCache = new EnvironmentSampleCache(pipeline);
     }
 
     /** {@inheritDoc} */
@@ -45,7 +47,10 @@ public final class DefaultTerrainWorld implements TerrainWorld {
     }
 
     /**
-     * Returns the lightweight placement environment without entering the final-sample tile cache.
+     * Returns the lightweight placement environment through a sparse bounded single-flight cache.
+     *
+     * <p>The loader still calls only the dedicated lightweight pipeline path. It never enters the
+     * final-sample tile cache, does not request biome data and does not schedule executor work.</p>
      *
      * @param x world X coordinate
      * @param z world Z coordinate
@@ -53,12 +58,13 @@ public final class DefaultTerrainWorld implements TerrainWorld {
      */
     @Override
     public TerrainEnvironmentSample environment(int x, int z) {
-        return pipeline.environment(x, z);
+        return environmentCache.sample(x, z);
     }
 
-    /** Releases world-scoped cached terrain tiles. */
+    /** Releases all world-scoped terrain and environment caches. */
     @Override
     public void close() {
+        environmentCache.clear();
         sampleCache.clear();
     }
 }
