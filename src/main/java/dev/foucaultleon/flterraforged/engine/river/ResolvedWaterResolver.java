@@ -13,6 +13,14 @@ import java.util.Objects;
  * already-shaped caller-owned cell. Ocean, lake and river candidates are evaluated independently and
  * then selected by {@link ResolvedWaterOwner#priority()}, which prevents later stages from partially
  * applying two hydraulic profiles to the same column.</p>
+ *
+ * <p>R43 distinguishes a narrow active receiver channel from established open ocean. A river remains
+ * authoritative while it traverses the marginal coast band, even when erosion has lowered its bed
+ * below sea level. Ocean ownership takes over that river only after both the configured ocean
+ * continentalness and ocean-depth thresholds are satisfied. Likewise, a shore-only lake promotion
+ * never replaces an already material river; the lake owns the channel only where the cached lake
+ * field itself reports material water. These rules remove artificial receiver cuts without adding
+ * neighborhood recursion to the hydraulic pipeline.</p>
  */
 public final class ResolvedWaterResolver {
 
@@ -51,12 +59,13 @@ public final class ResolvedWaterResolver {
     public ResolvedWaterField resolve(int x, int z, Cell shaped) {
         Objects.requireNonNull(shaped, "shaped");
         ResolvedWaterField resolved = riverCandidate(shaped);
+        boolean riverOwned = resolved.owner() == ResolvedWaterOwner.RIVER;
 
         LakeHit lake = receivers.lake(x, z);
-        if (lake.materialWater() || shouldPromoteLakeMouth(lake, shaped)) {
+        if (lake.materialWater() || shouldPromoteLakeMouth(lake, shaped, riverOwned)) {
             resolved = choose(resolved, lakeCandidate(lake, shaped));
         }
-        if (isOceanReceiver(shaped)) {
+        if (isOceanReceiver(shaped, resolved.owner() == ResolvedWaterOwner.RIVER)) {
             ResolvedWaterField ocean = oceanCandidate(shaped);
             if (ocean != null) {
                 resolved = choose(resolved, ocean);
@@ -83,7 +92,16 @@ public final class ResolvedWaterResolver {
                 Maths.clamp(target.riverMask, 0.0D, 1.0D));
     }
 
-    private boolean shouldPromoteLakeMouth(LakeHit lake, Cell target) {
+    private boolean shouldPromoteLakeMouth(
+            LakeHit lake,
+            Cell target,
+            boolean riverOwned) {
+        // A narrow material outlet must remain a river until it actually crosses into material lake
+        // water. Promoting the dry/transition shore around that outlet to a lake profile forces the
+        // minimum receiver depth into the channel and creates the abrupt cuts seen between lakes.
+        if (riverOwned) {
+            return false;
+        }
         if (!lake.shore()
                 || !Double.isFinite(lake.waterSurfaceHeight())
                 || !Double.isFinite(target.riverWaterSurfaceHeight)) {
@@ -134,13 +152,23 @@ public final class ResolvedWaterResolver {
                 1.0D);
     }
 
-    private boolean isOceanReceiver(Cell target) {
+    private boolean isOceanReceiver(Cell target, boolean riverOwned) {
         double height = target.heightErosion;
         double continentalness = target.continentEdge * 2.0D - 1.0D;
         boolean belowSea = height < world.seaLevel() - 1.50D;
         boolean oceanward = continentalness < classification.coastContinentalness();
         boolean submergedMarine = oceanward && height < world.seaLevel();
         boolean deepEnough = height < world.seaLevel() - classification.oceanDepthBelowSea();
+        boolean establishedOcean = deepEnough
+                && continentalness < classification.oceanContinentalness();
+
+        // A river carved below sea level in the coast band is still a confined channel. Treating
+        // "below sea" as sufficient marine evidence here widens/steps the mouth before the river has
+        // reached open ocean. Once the stronger ocean thresholds are both met, receiver ownership
+        // transfers normally and the ocean removes the residual river trench.
+        if (riverOwned) {
+            return establishedOcean;
+        }
         return submergedMarine
                 || (deepEnough && oceanward)
                 || (continentalness < classification.oceanContinentalness() && belowSea);
