@@ -38,6 +38,12 @@ public final class DefaultTerrainWorld implements TerrainWorld {
         return sampleCache.sample(x, z);
     }
 
+    /** {@inheritDoc} */
+    @Override
+    public TerrainSample[] sampleTile(int originX, int originZ, int size) {
+        return sampleCache.sampleTile(originX, originZ, size);
+    }
+
     /**
      * Returns the lightweight placement environment without entering the final-sample tile cache.
      *
