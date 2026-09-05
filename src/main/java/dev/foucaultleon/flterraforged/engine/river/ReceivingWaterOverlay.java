@@ -11,9 +11,9 @@ import java.util.Objects;
  * Re-applies receiving water bodies after river shaping so lakes and oceans own their final beds.
  *
  * <p>The river network is allowed to shape land and approach a receiver, but it is not allowed to
- * keep its own narrow bed once the pre-hydrology terrain is already part of a material lake or the
- * open ocean. The overlay therefore samples the immutable post-erosion terrain independently from
- * the river-shaped delegate and restores receiver-owned geometry as the final hydrology stage.</p>
+ * keep its own narrow bed once the preserved post-erosion surface already belongs to a material lake
+ * or the open ocean. River stages retain that immutable surface in {@link Cell#heightErosion}; this
+ * overlay therefore restores receiver geometry without re-running terrain or erosion sampling.</p>
  *
  * <p>This is an Engine-space composition stage, not a Minecraft repair pass. Materializers receive
  * one already-resolved continuous terrain sample and may quantize it to full blocks, slabs or other
@@ -26,7 +26,6 @@ public final class ReceivingWaterOverlay implements CellLookup {
     private static final double LAKE_MOUTH_SHORE_DISTANCE = -2.0D;
 
     private final EngineContext world;
-    private final CellLookup preHydrologyTerrain;
     private final RiverModel receivers;
     private final CellLookup riverTerrain;
     private final TerrainClassificationSettings classification;
@@ -35,19 +34,16 @@ public final class ReceivingWaterOverlay implements CellLookup {
      * Creates the final receiver-ownership stage.
      *
      * @param world immutable world context
-     * @param preHydrologyTerrain post-erosion terrain before any river or lake incision
      * @param receivers cached river-map provider containing the immutable lake fields
-     * @param riverTerrain fully shaped river/wet-core delegate
+     * @param riverTerrain fully shaped river/wet-core delegate that preserves {@code heightErosion}
      * @param classification coordinated final terrain-classification thresholds
      */
     public ReceivingWaterOverlay(
             EngineContext world,
-            CellLookup preHydrologyTerrain,
             RiverModel receivers,
             CellLookup riverTerrain,
             TerrainClassificationSettings classification) {
         this.world = Objects.requireNonNull(world, "world");
-        this.preHydrologyTerrain = Objects.requireNonNull(preHydrologyTerrain, "preHydrologyTerrain");
         this.receivers = Objects.requireNonNull(receivers, "receivers");
         this.riverTerrain = Objects.requireNonNull(riverTerrain, "riverTerrain");
         this.classification = Objects.requireNonNull(classification, "classification");
@@ -58,40 +54,37 @@ public final class ReceivingWaterOverlay implements CellLookup {
     public void lookup(int x, int z, Cell target) {
         Objects.requireNonNull(target, "target");
         riverTerrain.lookup(x, z, target);
-
-        Cell natural = new Cell();
-        preHydrologyTerrain.lookup(x, z, natural);
         LakeHit lake = receivers.lake(x, z);
 
-        if (lake.materialWater() || shouldPromoteLakeMouth(lake, natural, target)) {
-            applyLakeReceiver(natural, lake, target);
+        if (lake.materialWater() || shouldPromoteLakeMouth(lake, target)) {
+            applyLakeReceiver(lake, target);
             return;
         }
-        if (isOceanReceiver(natural)) {
-            applyOceanReceiver(natural, target);
+        if (isOceanReceiver(target)) {
+            applyOceanReceiver(target);
         }
     }
 
-    private boolean shouldPromoteLakeMouth(LakeHit lake, Cell natural, Cell riverShaped) {
+    private boolean shouldPromoteLakeMouth(LakeHit lake, Cell target) {
         if (!lake.shore()
                 || !Double.isFinite(lake.waterSurfaceHeight())
-                || !Double.isFinite(riverShaped.riverWaterSurfaceHeight)) {
+                || !Double.isFinite(target.riverWaterSurfaceHeight)) {
             return false;
         }
         if (lake.shoreDistance() < LAKE_MOUTH_SHORE_DISTANCE) {
             return false;
         }
-        return natural.heightErosion
+        return target.heightErosion
                 < lake.waterSurfaceHeight() - MATERIAL_WATER_EPSILON;
     }
 
-    private void applyLakeReceiver(Cell natural, LakeHit lake, Cell target) {
-        target.copyFrom(natural);
+    private void applyLakeReceiver(LakeHit lake, Cell target) {
+        double naturalBed = target.heightErosion;
         double depth = lake.materialWater()
                 ? Math.max(MINIMUM_RECEIVER_DEPTH, lake.minimumDepth())
                 : MINIMUM_RECEIVER_DEPTH;
         double bed = Maths.clamp(
-                Math.min(natural.heightErosion, lake.waterSurfaceHeight() - depth),
+                Math.min(naturalBed, lake.waterSurfaceHeight() - depth),
                 world.minY() + 1.0D,
                 world.maxYExclusive() - 2.0D);
 
@@ -106,10 +99,9 @@ public final class ReceivingWaterOverlay implements CellLookup {
         target.riverFlow = 0.0D;
     }
 
-    private void applyOceanReceiver(Cell natural, Cell target) {
-        target.copyFrom(natural);
+    private void applyOceanReceiver(Cell target) {
         target.height = Maths.clamp(
-                natural.heightErosion,
+                target.heightErosion,
                 world.minY() + 1.0D,
                 world.maxYExclusive() - 2.0D);
         target.lake = false;
@@ -122,9 +114,9 @@ public final class ReceivingWaterOverlay implements CellLookup {
         target.riverFlow = Double.NaN;
     }
 
-    private boolean isOceanReceiver(Cell natural) {
-        double height = natural.heightErosion;
-        double continentalness = natural.continentEdge * 2.0D - 1.0D;
+    private boolean isOceanReceiver(Cell target) {
+        double height = target.heightErosion;
+        double continentalness = target.continentEdge * 2.0D - 1.0D;
         boolean belowSea = height < world.seaLevel() - 1.50D;
         boolean oceanward = continentalness < classification.coastContinentalness();
         boolean submergedMarine = oceanward && height < world.seaLevel();
