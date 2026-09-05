@@ -5,20 +5,25 @@ import dev.foucaultleon.flterraforged.engine.api.river.RiverSample;
 import dev.foucaultleon.flterraforged.engine.cell.Cell;
 import dev.foucaultleon.flterraforged.engine.cell.CellLookup;
 import dev.foucaultleon.flterraforged.engine.internal.Maths;
-import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 /**
  * Thread-safe hydrology facade backed by cached immutable river maps.
  *
- * <p>Linear channels and depression-filled inland water are resolved together. The map generation
- * itself remains immutable and happens outside the cache lock.</p>
+ * <p>Linear channels and depression-filled inland water are resolved together. Completed maps are
+ * held in a bounded LRU. Concurrent cold misses for the same hydrology region use exact-key
+ * single-flight ownership: one caller generates the immutable map synchronously while duplicate
+ * callers reuse the same result. Expensive generation never executes while the LRU monitor is held
+ * and unrelated region keys remain fully independent.</p>
  */
 public final class RiverModel implements CellLookup {
 
-    private static final int GENERATION_LOCK_COUNT = 64;
     private static final double WET_CHANNEL_RADIUS = 0.78D;
     private static final double EDGE_WATER_DEPTH = 1.10D;
     private static final double MAXIMUM_BED_GRADE = 0.50D;
@@ -35,7 +40,7 @@ public final class RiverModel implements CellLookup {
     private final RiverSettings settings;
     private final RivermapGenerator generator;
     private final MapCache cache;
-    private final Object[] generationLocks;
+    private final ConcurrentMap<Long, CompletableFuture<Rivermap>> inFlight = new ConcurrentHashMap<>();
 
     /**
      * Creates a river model.
@@ -86,7 +91,6 @@ public final class RiverModel implements CellLookup {
                 drainageClimate,
                 settings);
         this.cache = new MapCache(settings.cacheSize());
-        this.generationLocks = createGenerationLocks();
     }
 
     /**
@@ -165,8 +169,9 @@ public final class RiverModel implements CellLookup {
         if (wetChannel) {
             // A river bed is a hydraulic profile, not eroded terrain with an arbitrary depth
             // subtracted from it. Limiting depth growth by horizontal distance makes the bed
-            // Lipschitz-continuous: together with the separately grade-limited water surface, two
-            // neighboring wet columns cannot become a two-block cliff after integer quantization.
+            // Lipschitz-continuous for ordinary river grades. Explicit R44 cascade/waterfall
+            // profiles remain continuous because their water surface itself is continuous and
+            // receiver-dominant even when the grade is intentionally steep.
             double desiredBed = river.waterSurfaceHeight() - desiredWaterDepth;
             double requiredIncision = Math.max(0.0D, baseHeight - desiredBed);
             carveableWetChannel = requiredIncision
@@ -379,41 +384,76 @@ public final class RiverModel implements CellLookup {
     /**
      * Returns one cached or newly generated immutable river map.
      *
+     * <p>Cold misses use exact-key single flight. The owner computes inline on its existing caller
+     * thread. Waiters for the same region join only that owner's future; no world-generation task
+     * is submitted and unrelated regions do not serialize behind hash-stripe locks.</p>
+     *
      * @param regionX river-region X index
      * @param regionZ river-region Z index
      * @return completed map
      */
     public Rivermap map(int regionX, int regionZ) {
         long key = (((long) regionX) << 32) ^ (regionZ & 0xFFFFFFFFL);
-        Rivermap map;
+        Rivermap completed = completedMap(key);
+        return completed == null ? loadSingleFlight(key, regionX, regionZ) : completed;
+    }
+
+    private Rivermap completedMap(long key) {
         synchronized (cache) {
-            map = cache.get(key);
+            return cache.get(key);
         }
-        if (map == null) {
-            synchronized (generationLock(key)) {
-                synchronized (cache) {
-                    map = cache.get(key);
-                }
-                if (map == null) {
-                    map = generator.generate(regionX, regionZ);
-                    synchronized (cache) {
-                        cache.put(key, map);
-                    }
+    }
+
+    private Rivermap loadSingleFlight(long key, int regionX, int regionZ) {
+        CompletableFuture<Rivermap> owned = new CompletableFuture<>();
+        CompletableFuture<Rivermap> existing = inFlight.putIfAbsent(key, owned);
+        if (existing != null) {
+            return await(existing);
+        }
+
+        try {
+            Rivermap generated = generator.generate(regionX, regionZ);
+            Rivermap retained;
+            synchronized (cache) {
+                Rivermap cached = cache.get(key);
+                if (cached == null) {
+                    cache.put(key, generated);
+                    retained = generated;
+                } else {
+                    retained = cached;
                 }
             }
+            owned.complete(retained);
+            return retained;
+        } catch (Throwable throwable) {
+            owned.completeExceptionally(throwable);
+            throw propagate(throwable);
+        } finally {
+            inFlight.remove(key, owned);
         }
-        return map;
     }
 
-    private Object generationLock(long key) {
-        int index = (int) (key ^ (key >>> 32)) & (GENERATION_LOCK_COUNT - 1);
-        return generationLocks[index];
+    private static Rivermap await(CompletableFuture<Rivermap> future) {
+        try {
+            return future.join();
+        } catch (CompletionException exception) {
+            Throwable cause = exception.getCause();
+            throw propagate(cause == null ? exception : cause);
+        }
     }
 
-    private static Object[] createGenerationLocks() {
-        Object[] locks = new Object[GENERATION_LOCK_COUNT];
-        Arrays.setAll(locks, ignored -> new Object());
-        return locks;
+    private static RuntimeException propagate(Throwable throwable) {
+        if (throwable instanceof RuntimeException runtimeException) {
+            return runtimeException;
+        }
+        if (throwable instanceof Error error) {
+            throw error;
+        }
+        return new IllegalStateException("River-map generation failed", throwable);
+    }
+
+    int inFlightMaps() {
+        return inFlight.size();
     }
 
     private LakeHit nearestLake(int x, int z) {
