@@ -11,9 +11,9 @@ import java.util.Objects;
  *
  * <p>The wrapper has two responsibilities. First, it closes one- or two-column dry barriers that
  * can remain when the ordinary river model refuses an implausibly deep local incision. Second, it
- * gives receiving water bodies authority over the final water level at a river mouth. Open ocean
- * therefore wins over a river profile, and a material lake wins over the incoming river while a
- * genuine terrain-backed drop immediately upstream is retained as a waterfall.</p>
+ * gives receiving water bodies authority over the final water level and bed at a river mouth. Open
+ * ocean therefore wins over a river profile, and a material lake wins over the incoming river while
+ * a genuine terrain-backed drop immediately upstream is retained as a waterfall.</p>
  *
  * <p>R39 extends receiver authority across narrow wet-core connectors even when the exact connector
  * column is not classified as {@code lake_shore}. Lake probes use the cached lake-only field instead
@@ -21,6 +21,10 @@ import java.util.Objects;
  * in the same nearest probe ring, preventing a river that merely runs beside a lake from being
  * flattened to the lake surface. A dry lake-shore transition remains dry unless an actual river wet
  * core reaches it.</p>
+ *
+ * <p>Receiver authority also removes the incoming river's artificial incision from the receiving
+ * water body. The pre-river terrain is retained when it is naturally deeper, but a narrow river bed
+ * is not allowed to continue as a trench through an otherwise smoother lake or marine floor.</p>
  *
  * <p>All corrections happen in Engine space before Minecraft materialization. No block-provider or
  * platform-specific information is required, so full-block and variable-height materializers see
@@ -124,10 +128,17 @@ public final class RiverWetCoreConnectivity implements CellLookup {
         }
 
         double receiverLevel = Double.NaN;
+        double receiverBed = Double.NaN;
         int receiverPriority = 0;
+        double naturalBed = Double.isFinite(target.heightErosion)
+                ? target.heightErosion
+                : target.height;
 
         if (isOpenOceanReceiver(target)) {
             receiverLevel = world.seaLevel();
+            receiverBed = Math.min(
+                    naturalBed,
+                    receiverLevel - minimumDepth(receiverLevel));
             receiverPriority = 3;
         }
 
@@ -139,6 +150,9 @@ public final class RiverWetCoreConnectivity implements CellLookup {
             boolean corroborated = target.lakeShore || lake.samples() >= 2;
             if (corroborated && Double.isFinite(lake.level())) {
                 receiverLevel = lake.level();
+                receiverBed = Math.min(
+                        naturalBed,
+                        lake.level() - Math.max(MINIMUM_WATER_DEPTH, lake.minimumDepth()));
                 receiverPriority = 2;
             }
         }
@@ -150,8 +164,9 @@ public final class RiverWetCoreConnectivity implements CellLookup {
             return;
         }
 
+        double fallbackBed = receiverLevel - minimumDepth(receiverLevel);
         double bed = Maths.clamp(
-                Math.min(target.height, receiverLevel - minimumDepth(receiverLevel)),
+                Double.isFinite(receiverBed) ? receiverBed : fallbackBed,
                 world.minY() + 1.0D,
                 world.maxYExclusive() - 2.0D);
         target.height = bed;
@@ -183,6 +198,7 @@ public final class RiverWetCoreConnectivity implements CellLookup {
                 break;
             }
             double bestLevel = Double.NaN;
+            double bestMinimumDepth = Double.NaN;
             double bestInterior = Double.NEGATIVE_INFINITY;
             double bestDelta = Double.POSITIVE_INFINITY;
             int samples = 0;
@@ -204,12 +220,13 @@ public final class RiverWetCoreConnectivity implements CellLookup {
                         || hit.waterSurfaceHeight() < bestLevel;
                 if (deeper || (sameInterior && (closer || (sameDelta && lowerTie)))) {
                     bestLevel = hit.waterSurfaceHeight();
+                    bestMinimumDepth = hit.minimumDepth();
                     bestInterior = interior;
                     bestDelta = delta;
                 }
             }
             if (samples > 0) {
-                return new LakeReceiver(bestLevel, samples);
+                return new LakeReceiver(bestLevel, bestMinimumDepth, samples);
             }
         }
         return LakeReceiver.NONE;
@@ -259,7 +276,7 @@ public final class RiverWetCoreConnectivity implements CellLookup {
         return Math.max(MINIMUM_WATER_DEPTH, target);
     }
 
-    private record LakeReceiver(double level, int samples) {
-        private static final LakeReceiver NONE = new LakeReceiver(Double.NaN, 0);
+    private record LakeReceiver(double level, double minimumDepth, int samples) {
+        private static final LakeReceiver NONE = new LakeReceiver(Double.NaN, Double.NaN, 0);
     }
 }
