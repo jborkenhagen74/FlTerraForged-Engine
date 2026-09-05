@@ -77,7 +77,8 @@ public final class ResolvedWaterResolver {
                 target.riverWaterSurfaceHeight,
                 target.riverDistance,
                 Math.max(0.0D, target.riverWidth),
-                target.riverFlow);
+                target.riverFlow,
+                Maths.clamp(target.riverMask, 0.0D, 1.0D));
     }
 
     private boolean shouldPromoteLakeMouth(LakeHit lake, Cell target) {
@@ -108,7 +109,8 @@ public final class ResolvedWaterResolver {
                 lake.waterSurfaceHeight(),
                 -Math.max(0.0D, lake.shoreDistance()),
                 LakeField.SHORE_TRANSITION_WIDTH,
-                0.0D);
+                0.0D,
+                Maths.clamp(1.0D - lake.influence(), 0.0D, 1.0D));
     }
 
     private ResolvedWaterField oceanCandidate(Cell target) {
@@ -126,7 +128,8 @@ public final class ResolvedWaterResolver {
                 surface,
                 Double.POSITIVE_INFINITY,
                 0.0D,
-                Double.NaN);
+                Double.NaN,
+                1.0D);
     }
 
     private boolean isOceanReceiver(Cell target) {
