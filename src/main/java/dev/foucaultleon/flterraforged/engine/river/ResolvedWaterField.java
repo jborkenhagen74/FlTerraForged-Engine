@@ -65,12 +65,23 @@ public record ResolvedWaterField(
     }
 
     /**
-     * Creates a dry field that preserves the supplied bed.
+     * Creates a dry field using the neutral hydraulic mask.
      *
      * @param bedHeight continuous terrain bed
      * @return dry resolved water field
      */
     public static ResolvedWaterField dry(double bedHeight) {
+        return dry(bedHeight, 1.0D);
+    }
+
+    /**
+     * Creates a dry field that preserves an existing bank/shore hydraulic mask.
+     *
+     * @param bedHeight continuous terrain bed
+     * @param mask existing hydraulic mask
+     * @return dry resolved water field
+     */
+    public static ResolvedWaterField dry(double bedHeight, double mask) {
         return new ResolvedWaterField(
                 ResolvedWaterOwner.DRY,
                 bedHeight,
@@ -78,7 +89,7 @@ public record ResolvedWaterField(
                 Double.POSITIVE_INFINITY,
                 0.0D,
                 Double.NaN,
-                1.0D);
+                mask);
     }
 
     /**
