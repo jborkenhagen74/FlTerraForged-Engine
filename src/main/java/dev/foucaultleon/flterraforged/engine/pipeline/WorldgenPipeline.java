@@ -26,6 +26,7 @@ import dev.foucaultleon.flterraforged.engine.noise.Noise2D;
 import dev.foucaultleon.flterraforged.engine.noise.SeededNoise2D;
 import dev.foucaultleon.flterraforged.engine.river.RiverModel;
 import dev.foucaultleon.flterraforged.engine.river.RiverSettings;
+import dev.foucaultleon.flterraforged.engine.river.RiverWetCoreConnectivity;
 import dev.foucaultleon.flterraforged.engine.terrain.TerrainClassificationSettings;
 import dev.foucaultleon.flterraforged.engine.terrain.TerrainClassifier;
 import dev.foucaultleon.flterraforged.engine.terrain.TerrainModel;
@@ -39,8 +40,8 @@ import java.util.Objects;
  * Fully assembled, immutable world-generation pipeline for one world seed.
  *
  * <p>The class is the single composition root for all engine stages. It guarantees the ordering
- * {@code continent -> terrain -> erosion -> climate-runoff -> river -> climate} and prevents individual stages from
- * being accidentally wired against different continent or terrain sources.</p>
+ * {@code continent -> terrain -> erosion -> climate-runoff -> river -> wet-core connectivity -> climate}
+ * and prevents individual stages from being accidentally wired against different continent or terrain sources.</p>
  */
 public final class WorldgenPipeline implements CellLookup {
 
@@ -57,7 +58,7 @@ public final class WorldgenPipeline implements CellLookup {
 
     private final EngineContext context;
     private final TerrainModel terrain;
-    private final RiverModel river;
+    private final CellLookup river;
     private final ClimateModel climate;
     private final TerrainClassifier classifier;
 
@@ -121,13 +122,14 @@ public final class WorldgenPipeline implements CellLookup {
                 climateRegions,
                 climateSettings);
 
-        this.river = new RiverModel(
+        RiverModel riverModel = new RiverModel(
                 seed ^ RIVER_SEED,
                 context,
                 erosion,
                 baseLookup,
                 drainageClimate,
                 RiverSettings.from(settings));
+        this.river = new RiverWetCoreConnectivity(context, riverModel);
         this.terrain = new TerrainModel(context, river);
         this.climate = new ClimateModel(
                 context,
