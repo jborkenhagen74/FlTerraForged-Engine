@@ -1,8 +1,8 @@
-name: Build R40
+name: Build R41
 
 on:
   push:
-    branches: [ 'revision/r40-receiver-overlay' ]
+    branches: [ 'revision/r41-startup-liveness' ]
   workflow_dispatch:
 
 permissions:
@@ -10,12 +10,12 @@ permissions:
 
 jobs:
   check:
-    name: Check R40 against R50 API
+    name: Check R41 startup liveness against R50 API
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
-      - name: Checkout Engine R40
+      - name: Checkout Engine R41
         uses: actions/checkout@v6
 
       - name: Install Java 17 toolchain
@@ -38,26 +38,29 @@ jobs:
         with:
           gradle-version: '9.7.1'
 
-      - name: Verify Engine R40 receiver overlay
+      - name: Verify inherited Engine R40 receiver overlay
         run: python3 tools/verify-r40-receiver-overlay.py
+
+      - name: Verify R41 startup wiring
+        run: python3 tools/verify-r41-startup-liveness.py
 
       - name: Checkout R50 host API source
         uses: actions/checkout@v6
         with:
           repository: jborkenhagen74/FlTerraForged
-          ref: revision/r50-receiver-overlay
+          ref: b2dd8e8f90c5c12d0fa1968952d1ceb23b465ce5
           path: .ci/flterraforged-r50
 
       - name: Build R50 Engine API local repository
         run: gradle -p .ci/flterraforged-r50 -Dorg.gradle.java.installations.paths="$FLTERRAFORGED_JAVA17_HOME,$JAVA_HOME" --no-daemon --warning-mode all :engine-api:publish
 
-      - name: Build and test R40 against R50 Engine API
+      - name: Build and test R41 against R50 Engine API
         env:
           FLTERRAFORGED_API_LOCAL_REPOSITORY: ${{ github.workspace }}/.ci/flterraforged-r50/build/maven-repository
         run: gradle -Dorg.gradle.java.installations.paths="$FLTERRAFORGED_JAVA17_HOME,$JAVA_HOME" --no-daemon --refresh-dependencies --warning-mode all clean check jar
 
-      - name: Collect R40 runtime JAR
-        id: collect_engine_r40
+      - name: Collect R41 runtime JAR
+        id: collect_engine_r41
         shell: bash
         run: |
           set -euo pipefail
@@ -73,39 +76,40 @@ jobs:
           fi
           short_sha="${GITHUB_SHA:0:7}"
           mkdir -p build/artifacts
-          path="build/artifacts/FlTerraForged-Engine-R40-${short_sha}.jar"
+          path="build/artifacts/FlTerraForged-Engine-R41-${short_sha}.jar"
           cp "${jars[0]}" "$path"
           echo "artifact_path=$path" >> "$GITHUB_OUTPUT"
           echo "jar_name=$(basename "$path")" >> "$GITHUB_OUTPUT"
 
-      - name: Upload R40 runtime JAR
-        id: upload_engine_r40
+      - name: Upload R41 runtime JAR
+        id: upload_engine_r41
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: FlTerraForged-Engine-R40
-          path: ${{ steps.collect_engine_r40.outputs.artifact_path }}
+          name: FlTerraForged-Engine-R41
+          path: ${{ steps.collect_engine_r41.outputs.artifact_path }}
           archive: false
           if-no-files-found: error
           retention-days: 30
 
-      - name: Add R40 artifact link to job summary
+      - name: Add R41 artifact link to job summary
         shell: bash
         env:
-          ARTIFACT_URL: ${{ steps.upload_engine_r40.outputs.artifact-url }}
-          ARTIFACT_DIGEST: ${{ steps.upload_engine_r40.outputs.artifact-digest }}
-          JAR_NAME: ${{ steps.collect_engine_r40.outputs.jar_name }}
+          ARTIFACT_URL: ${{ steps.upload_engine_r41.outputs.artifact-url }}
+          ARTIFACT_DIGEST: ${{ steps.upload_engine_r41.outputs.artifact-digest }}
+          JAR_NAME: ${{ steps.collect_engine_r41.outputs.jar_name }}
         run: |
           {
-            echo "### FlTerraForged Engine R40"
+            echo "### FlTerraForged Engine R41"
             echo
             echo "- JAR: \`$JAR_NAME\`"
             echo "- Host API validation: FlTerraForged R50"
-            echo "- Drainage topology source: post-erosion terrain"
+            echo "- Coarse drainage planning: pre-erosion base terrain"
+            echo "- Final river incision: post-erosion terrain"
             echo "- Final order: river -> wet-core -> receiver overlay"
-            echo "- Open ocean restores natural post-erosion bed"
-            echo "- Lakes re-apply receiver-owned bed and level after river shaping"
-            echo "- Receiver mouth alignment never deepens an existing river bed"
-            echo "- Duplicate post-erosion resampling in overlay: none"
+            echo "- R40 receiver ownership: retained"
+            echo "- Erosion and final-sample cold misses: inline single-flight"
+            echo "- Cold environment/tile startup tests: enabled with hard timeouts"
+            echo "- Worldgen executor scheduling from cache loaders: none"
             echo "- Post-generation repair pass: none"
             echo "- SHA-256: \`$ARTIFACT_DIGEST\`"
             echo "- [Download artifact]($ARTIFACT_URL)"
