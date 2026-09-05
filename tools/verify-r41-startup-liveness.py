@@ -6,6 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PIPELINE = ROOT / "src/main/java/dev/foucaultleon/flterraforged/engine/pipeline/WorldgenPipeline.java"
 EROSION = ROOT / "src/main/java/dev/foucaultleon/flterraforged/engine/erosion/ErosionPipeline.java"
+RIVER = ROOT / "src/main/java/dev/foucaultleon/flterraforged/engine/river/RiverModel.java"
 WORLD_CACHE = ROOT / "src/main/java/dev/foucaultleon/flterraforged/engine/WorldSampleCache.java"
 SINGLE_FLIGHT = ROOT / "src/main/java/dev/foucaultleon/flterraforged/engine/internal/InlineSingleFlightCache.java"
 STARTUP_TEST = ROOT / "src/test/java/dev/foucaultleon/flterraforged/engine/StartupLivenessTest.java"
@@ -23,6 +24,7 @@ def reject(text: str, needle: str, message: str) -> None:
 
 pipeline = PIPELINE.read_text(encoding="utf-8")
 erosion = EROSION.read_text(encoding="utf-8")
+river = RIVER.read_text(encoding="utf-8")
 world_cache = WORLD_CACHE.read_text(encoding="utf-8")
 single_flight = SINGLE_FLIGHT.read_text(encoding="utf-8")
 startup_test = STARTUP_TEST.read_text(encoding="utf-8")
@@ -46,6 +48,16 @@ require(
     erosion,
     "InlineSingleFlightCache<Long, ErosionTile>",
     "erosion regions must use inline single-flight caching",
+)
+require(
+    river,
+    "InlineSingleFlightCache<Long, Rivermap>",
+    "river maps must use inline single-flight caching",
+)
+require(
+    river,
+    "return cache.get(key, () -> generator.generate(regionX, regionZ));",
+    "river-map cold misses must be coalesced before generator execution",
 )
 require(
     world_cache,
