@@ -41,7 +41,30 @@ jobs:
           gradle-version: '9.7.1'
 
       - name: Verify Engine layout
+        if: github.ref != 'refs/heads/revision/r36-final-wet-envelope'
         run: python3 tools/verify-layout.py
+
+      - name: Verify Engine R36 final wet support
+        if: github.ref == 'refs/heads/revision/r36-final-wet-envelope'
+        run: python3 tools/verify-r36-final-wet.py
+
+      - name: Checkout R45 host API source
+        if: github.ref == 'refs/heads/revision/r36-final-wet-envelope'
+        uses: actions/checkout@v6
+        with:
+          repository: jborkenhagen74/FlTerraForged
+          ref: revision/r45-final-wet-reconciliation
+          path: .ci/flterraforged-r45
+
+      - name: Build R45 Engine API local repository
+        if: github.ref == 'refs/heads/revision/r36-final-wet-envelope'
+        run: gradle -p .ci/flterraforged-r45 -Dorg.gradle.java.installations.paths="$FLTERRAFORGED_JAVA17_HOME,$JAVA_HOME" --no-daemon --warning-mode all :engine-api:publish
+
+      - name: Build and test R36 against R45 Engine API
+        if: github.ref == 'refs/heads/revision/r36-final-wet-envelope'
+        env:
+          FLTERRAFORGED_API_LOCAL_REPOSITORY: ${{ github.workspace }}/.ci/flterraforged-r45/build/maven-repository
+        run: gradle -Dorg.gradle.java.installations.paths="$FLTERRAFORGED_JAVA17_HOME,$JAVA_HOME" --no-daemon --refresh-dependencies --warning-mode all clean check jar
 
       - name: Checkout R44 host API source
         if: github.ref == 'refs/heads/revision/r35-dry-coast-semantics'
@@ -62,12 +85,44 @@ jobs:
         run: gradle -Dorg.gradle.java.installations.paths="$FLTERRAFORGED_JAVA17_HOME,$JAVA_HOME" --no-daemon --refresh-dependencies --warning-mode all clean check jar
 
       - name: Build and test against public Engine API Maven repository
-        if: github.ref != 'refs/heads/revision/r35-dry-coast-semantics'
+        if: github.ref != 'refs/heads/revision/r35-dry-coast-semantics' && github.ref != 'refs/heads/revision/r36-final-wet-envelope'
         run: gradle -Dorg.gradle.java.installations.paths="$FLTERRAFORGED_JAVA17_HOME,$JAVA_HOME" --no-daemon --refresh-dependencies --warning-mode all clean check
+
+      - name: Collect R36 runtime JAR
+        if: github.ref == 'refs/heads/revision/r36-final-wet-envelope'
+        id: collect_engine_r36
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t jars < <(
+            find build/libs -maxdepth 1 -type f -name '*.jar' \
+              ! -name '*-sources.jar' \
+              ! -name '*-javadoc.jar' \
+              -print | sort
+          )
+          if [ "${#jars[@]}" -ne 1 ]; then
+            echo "::error::Expected one Engine runtime JAR, found ${#jars[@]}."
+            exit 1
+          fi
+          short_sha="${GITHUB_SHA:0:7}"
+          mkdir -p build/artifacts
+          path="build/artifacts/FlTerraForged-Engine-R36-${short_sha}.jar"
+          cp "${jars[0]}" "$path"
+          echo "artifact_path=$path" >> "$GITHUB_OUTPUT"
+
+      - name: Upload R36 runtime JAR
+        if: github.ref == 'refs/heads/revision/r36-final-wet-envelope'
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: FlTerraForged-Engine-R36
+          path: ${{ steps.collect_engine_r36.outputs.artifact_path }}
+          archive: false
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Collect R35 runtime JAR
         if: github.ref == 'refs/heads/revision/r35-dry-coast-semantics'
-        id: collect_engine
+        id: collect_engine_r35
         shell: bash
         run: |
           set -euo pipefail
@@ -92,7 +147,7 @@ jobs:
         uses: actions/upload-artifact@v7.0.1
         with:
           name: FlTerraForged-Engine-R35
-          path: ${{ steps.collect_engine.outputs.artifact_path }}
+          path: ${{ steps.collect_engine_r35.outputs.artifact_path }}
           archive: false
           if-no-files-found: error
           retention-days: 30
