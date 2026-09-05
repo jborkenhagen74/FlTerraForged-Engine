@@ -16,6 +16,8 @@ for token in (
         errors.append(f"RiverModel missing R39 lake-only probe invariant: {token}")
 
 for token in (
+        "DRY_SHORE_MAXIMUM_DEPTH = 0.05D",
+        "target.lakeShore && target.riverDepth <= DRY_SHORE_MAXIMUM_DEPTH",
         "LAKE_BRIDGE_MAX_PROBE = 4",
         "RECEIVER_PROBES = {1, 2, 4, 8}",
         "isGuaranteedWetCore(target)",
@@ -47,4 +49,4 @@ if errors:
         print(f" - {error}", file=sys.stderr)
     raise SystemExit(1)
 
-print("R39 lake receiver continuity and bounded lake-only probe verification passed")
+print("R39 lake receiver continuity, dry-shore preservation and bounded lake-only probes verified")
