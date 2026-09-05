@@ -15,6 +15,12 @@ import java.util.Objects;
  * therefore wins over a river profile, and a material lake wins over the incoming river while a
  * genuine terrain-backed drop immediately upstream is retained as a waterfall.</p>
  *
+ * <p>R39 extends receiver authority across narrow wet-core connectors even when the exact connector
+ * column is not classified as {@code lake_shore}. Lake probes use the cached lake-only field instead
+ * of recursively re-running river selection. Non-shore bridges require corroborating lake samples
+ * in the same nearest probe ring, preventing a river that merely runs beside a lake from being
+ * flattened to the lake surface.</p>
+ *
  * <p>All corrections happen in Engine space before Minecraft materialization. No block-provider or
  * platform-specific information is required, so full-block and variable-height materializers see
  * exactly the same hydraulic semantics.</p>
@@ -27,13 +33,15 @@ public final class RiverWetCoreConnectivity implements CellLookup {
     private static final double FRINGE_MAXIMUM_CORRECTION = 8.0D;
     private static final double MINIMUM_WATER_DEPTH = 1.10D;
     private static final double CHANNEL_MATCH_EPSILON = 1.0E-6D;
+    private static final double RECEIVER_SELECTION_EPSILON = 1.0E-6D;
     private static final double OPEN_WATER_CONTINENT_EDGE = 0.14D;
     private static final double OPEN_WATER_HEIGHT_MARGIN = 3.0D;
     private static final double WATERFALL_MINIMUM_WATER_DROP = 1.25D;
     private static final double WATERFALL_MINIMUM_TERRAIN_HEAD = 2.50D;
-    private static final int[] RECEIVER_PROBES = {4, 8};
-    private static final int[] PROBE_X = {-1, 1, 0, 0};
-    private static final int[] PROBE_Z = {0, 0, -1, 1};
+    private static final int LAKE_BRIDGE_MAX_PROBE = 4;
+    private static final int[] RECEIVER_PROBES = {1, 2, 4, 8};
+    private static final int[] PROBE_X = {-1, 1, 0, 0, -1, 1, -1, 1};
+    private static final int[] PROBE_Z = {0, 0, -1, 1, -1, -1, 1, 1};
 
     private final EngineContext world;
     private final RiverModel delegate;
@@ -105,6 +113,11 @@ public final class RiverWetCoreConnectivity implements CellLookup {
     }
 
     private void applyReceivingWaterAuthority(int x, int z, Cell target) {
+        double currentLevel = target.riverWaterSurfaceHeight;
+        if (!Double.isFinite(currentLevel)) {
+            return;
+        }
+
         double receiverLevel = Double.NaN;
         int receiverPriority = 0;
 
@@ -113,10 +126,14 @@ public final class RiverWetCoreConnectivity implements CellLookup {
             receiverPriority = 3;
         }
 
-        if (target.lakeShore) {
-            double lakeLevel = nearbyLakeLevel(x, z);
-            if (Double.isFinite(lakeLevel) && receiverPriority < 2) {
-                receiverLevel = lakeLevel;
+        int lakeProbeLimit = target.lakeShore
+                ? RECEIVER_PROBES[RECEIVER_PROBES.length - 1]
+                : isGuaranteedWetCore(target) ? LAKE_BRIDGE_MAX_PROBE : 0;
+        if (lakeProbeLimit > 0 && receiverPriority < 2) {
+            LakeReceiver lake = nearbyLakeReceiver(x, z, currentLevel, lakeProbeLimit);
+            boolean corroborated = target.lakeShore || lake.samples() >= 2;
+            if (corroborated && Double.isFinite(lake.level())) {
+                receiverLevel = lake.level();
                 receiverPriority = 2;
             }
         }
@@ -124,8 +141,6 @@ public final class RiverWetCoreConnectivity implements CellLookup {
         if (receiverPriority == 0 || !Double.isFinite(receiverLevel)) {
             return;
         }
-
-        double currentLevel = target.riverWaterSurfaceHeight;
         if (preserveWaterfallApproach(target, currentLevel, receiverLevel)) {
             return;
         }
@@ -144,27 +159,55 @@ public final class RiverWetCoreConnectivity implements CellLookup {
                 && target.heightErosion <= world.seaLevel() + OPEN_WATER_HEIGHT_MARGIN;
     }
 
-    private double nearbyLakeLevel(int x, int z) {
-        Cell scratch = new Cell();
-        double best = Double.NaN;
+    private static boolean isGuaranteedWetCore(Cell target) {
+        if (!Double.isFinite(target.riverDistance) || !Double.isFinite(target.riverWidth)) {
+            return false;
+        }
+        double halfWidth = Math.max(0.5D, target.riverWidth * 0.5D);
+        double coreRadius = Math.max(MINIMUM_CORE_RADIUS, halfWidth * GUARANTEED_CORE_FRACTION);
+        return target.riverDistance <= coreRadius + CHANNEL_MATCH_EPSILON;
+    }
+
+    private LakeReceiver nearbyLakeReceiver(
+            int x,
+            int z,
+            double currentLevel,
+            int maximumDistance) {
         for (int distance : RECEIVER_PROBES) {
+            if (distance > maximumDistance) {
+                break;
+            }
+            double bestLevel = Double.NaN;
+            double bestInterior = Double.NEGATIVE_INFINITY;
+            double bestDelta = Double.POSITIVE_INFINITY;
+            int samples = 0;
             for (int direction = 0; direction < PROBE_X.length; direction++) {
-                delegate.lookup(
+                LakeHit hit = delegate.lake(
                         x + PROBE_X[direction] * distance,
-                        z + PROBE_Z[direction] * distance,
-                        scratch);
-                if (!scratch.lake || !Double.isFinite(scratch.riverWaterSurfaceHeight)) {
+                        z + PROBE_Z[direction] * distance);
+                if (!hit.materialWater() || !Double.isFinite(hit.waterSurfaceHeight())) {
                     continue;
                 }
-                if (!Double.isFinite(best) || scratch.riverWaterSurfaceHeight < best) {
-                    best = scratch.riverWaterSurfaceHeight;
+                samples++;
+                double interior = hit.shoreDistance();
+                double delta = Math.abs(hit.waterSurfaceHeight() - currentLevel);
+                boolean deeper = interior > bestInterior + RECEIVER_SELECTION_EPSILON;
+                boolean sameInterior = Math.abs(interior - bestInterior) <= RECEIVER_SELECTION_EPSILON;
+                boolean closer = delta < bestDelta - RECEIVER_SELECTION_EPSILON;
+                boolean sameDelta = Math.abs(delta - bestDelta) <= RECEIVER_SELECTION_EPSILON;
+                boolean lowerTie = !Double.isFinite(bestLevel)
+                        || hit.waterSurfaceHeight() < bestLevel;
+                if (deeper || (sameInterior && (closer || (sameDelta && lowerTie)))) {
+                    bestLevel = hit.waterSurfaceHeight();
+                    bestInterior = interior;
+                    bestDelta = delta;
                 }
             }
-            if (Double.isFinite(best)) {
-                return best;
+            if (samples > 0) {
+                return new LakeReceiver(bestLevel, samples);
             }
         }
-        return best;
+        return LakeReceiver.NONE;
     }
 
     private static boolean preserveWaterfallApproach(
@@ -209,5 +252,9 @@ public final class RiverWetCoreConnectivity implements CellLookup {
             target = Maths.lerp(2.25D, 1.75D, alpha);
         }
         return Math.max(MINIMUM_WATER_DEPTH, target);
+    }
+
+    private record LakeReceiver(double level, int samples) {
+        private static final LakeReceiver NONE = new LakeReceiver(Double.NaN, 0);
     }
 }
