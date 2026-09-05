@@ -41,12 +41,34 @@ jobs:
           gradle-version: '9.7.1'
 
       - name: Verify Engine layout
-        if: github.ref != 'refs/heads/revision/r36-final-wet-envelope'
+        if: github.ref != 'refs/heads/revision/r36-final-wet-envelope' && github.ref != 'refs/heads/revision/r37-river-wet-core-connectivity'
         run: python3 tools/verify-layout.py
+
+      - name: Verify Engine R37 wet-core connectivity
+        if: github.ref == 'refs/heads/revision/r37-river-wet-core-connectivity'
+        run: python3 tools/verify-r37-wet-core.py
 
       - name: Verify Engine R36 final wet support
         if: github.ref == 'refs/heads/revision/r36-final-wet-envelope'
         run: python3 tools/verify-r36-final-wet.py
+
+      - name: Checkout R46 host API source
+        if: github.ref == 'refs/heads/revision/r37-river-wet-core-connectivity'
+        uses: actions/checkout@v6
+        with:
+          repository: jborkenhagen74/FlTerraForged
+          ref: revision/r46-owned-carver
+          path: .ci/flterraforged-r46
+
+      - name: Build R46 Engine API local repository
+        if: github.ref == 'refs/heads/revision/r37-river-wet-core-connectivity'
+        run: gradle -p .ci/flterraforged-r46 -Dorg.gradle.java.installations.paths="$FLTERRAFORGED_JAVA17_HOME,$JAVA_HOME" --no-daemon --warning-mode all :engine-api:publish
+
+      - name: Build and test R37 against R46 Engine API
+        if: github.ref == 'refs/heads/revision/r37-river-wet-core-connectivity'
+        env:
+          FLTERRAFORGED_API_LOCAL_REPOSITORY: ${{ github.workspace }}/.ci/flterraforged-r46/build/maven-repository
+        run: gradle -Dorg.gradle.java.installations.paths="$FLTERRAFORGED_JAVA17_HOME,$JAVA_HOME" --no-daemon --refresh-dependencies --warning-mode all clean check jar
 
       - name: Checkout R45 host API source
         if: github.ref == 'refs/heads/revision/r36-final-wet-envelope'
@@ -85,8 +107,40 @@ jobs:
         run: gradle -Dorg.gradle.java.installations.paths="$FLTERRAFORGED_JAVA17_HOME,$JAVA_HOME" --no-daemon --refresh-dependencies --warning-mode all clean check jar
 
       - name: Build and test against public Engine API Maven repository
-        if: github.ref != 'refs/heads/revision/r35-dry-coast-semantics' && github.ref != 'refs/heads/revision/r36-final-wet-envelope'
+        if: github.ref != 'refs/heads/revision/r35-dry-coast-semantics' && github.ref != 'refs/heads/revision/r36-final-wet-envelope' && github.ref != 'refs/heads/revision/r37-river-wet-core-connectivity'
         run: gradle -Dorg.gradle.java.installations.paths="$FLTERRAFORGED_JAVA17_HOME,$JAVA_HOME" --no-daemon --refresh-dependencies --warning-mode all clean check
+
+      - name: Collect R37 runtime JAR
+        if: github.ref == 'refs/heads/revision/r37-river-wet-core-connectivity'
+        id: collect_engine_r37
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t jars < <(
+            find build/libs -maxdepth 1 -type f -name '*.jar' \
+              ! -name '*-sources.jar' \
+              ! -name '*-javadoc.jar' \
+              -print | sort
+          )
+          if [ "${#jars[@]}" -ne 1 ]; then
+            echo "::error::Expected one Engine runtime JAR, found ${#jars[@]}."
+            exit 1
+          fi
+          short_sha="${GITHUB_SHA:0:7}"
+          mkdir -p build/artifacts
+          path="build/artifacts/FlTerraForged-Engine-R37-${short_sha}.jar"
+          cp "${jars[0]}" "$path"
+          echo "artifact_path=$path" >> "$GITHUB_OUTPUT"
+
+      - name: Upload R37 runtime JAR
+        if: github.ref == 'refs/heads/revision/r37-river-wet-core-connectivity'
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: FlTerraForged-Engine-R37
+          path: ${{ steps.collect_engine_r37.outputs.artifact_path }}
+          archive: false
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Collect R36 runtime JAR
         if: github.ref == 'refs/heads/revision/r36-final-wet-envelope'
@@ -116,38 +170,6 @@ jobs:
         with:
           name: FlTerraForged-Engine-R36
           path: ${{ steps.collect_engine_r36.outputs.artifact_path }}
-          archive: false
-          if-no-files-found: error
-          retention-days: 30
-
-      - name: Collect R35 runtime JAR
-        if: github.ref == 'refs/heads/revision/r35-dry-coast-semantics'
-        id: collect_engine_r35
-        shell: bash
-        run: |
-          set -euo pipefail
-          mapfile -t jars < <(
-            find build/libs -maxdepth 1 -type f -name '*.jar' \
-              ! -name '*-sources.jar' \
-              ! -name '*-javadoc.jar' \
-              -print | sort
-          )
-          if [ "${#jars[@]}" -ne 1 ]; then
-            echo "::error::Expected one Engine runtime JAR, found ${#jars[@]}."
-            exit 1
-          fi
-          short_sha="${GITHUB_SHA:0:7}"
-          mkdir -p build/artifacts
-          path="build/artifacts/FlTerraForged-Engine-R35-${short_sha}.jar"
-          cp "${jars[0]}" "$path"
-          echo "artifact_path=$path" >> "$GITHUB_OUTPUT"
-
-      - name: Upload R35 runtime JAR
-        if: github.ref == 'refs/heads/revision/r35-dry-coast-semantics'
-        uses: actions/upload-artifact@v7.0.1
-        with:
-          name: FlTerraForged-Engine-R35
-          path: ${{ steps.collect_engine_r35.outputs.artifact_path }}
           archive: false
           if-no-files-found: error
           retention-days: 30
