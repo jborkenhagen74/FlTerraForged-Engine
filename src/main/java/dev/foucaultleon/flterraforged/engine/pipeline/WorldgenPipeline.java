@@ -142,10 +142,10 @@ public final class WorldgenPipeline implements CellLookup {
         CellLookup connectedRiver = new RiverWetCoreConnectivity(context, riverModel);
 
         // Receiver masks are known by the hydrology model, but their geometry is applied last. The
-        // final overlay restores the immutable post-erosion ocean/lake bed after river shaping.
+        // river stage keeps the immutable post-erosion surface in Cell.heightErosion, so the overlay
+        // can restore receiver geometry without a second terrain/erosion lookup per sample.
         this.river = new ReceivingWaterOverlay(
                 context,
-                erosion,
                 riverModel,
                 connectedRiver,
                 classificationSettings);
