@@ -46,6 +46,10 @@ public record TerrainClassificationSettings(
     /**
      * Derives classification thresholds from the same settings that shape the pipeline.
      *
+     * <p>The dry coast band deliberately spans several vertical blocks. Minecraft-family
+     * materializers can use that semantic width for a coherent sand-to-land transition instead of
+     * switching materials on one contour line.</p>
+     *
      * @param settings engine settings
      * @return coordinated classification thresholds
      */
@@ -54,7 +58,7 @@ public record TerrainClassificationSettings(
         return new TerrainClassificationSettings(
                 Math.max(3.0D, settings.relief() * 0.10D),
                 -0.72D,
-                Math.max(2.0D, settings.relief() * 0.06D),
+                Math.max(4.0D, settings.relief() * 0.09D),
                 -0.34D,
                 Math.max(0.60D, settings.riverDepth() * 0.11D),
                 Math.max(2.25D, settings.relief() * 0.07D));
