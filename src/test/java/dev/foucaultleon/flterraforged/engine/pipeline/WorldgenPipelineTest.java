@@ -43,24 +43,33 @@ final class WorldgenPipelineTest {
 
         assertTrue(Double.isFinite(cell.height));
         assertTrue(Double.isFinite(cell.heightErosion));
-        assertTrue(cell.height <= cell.heightErosion + 1.0E-9D, "rivers may lower but not raise terrain");
+        assertTrue(cell.height <= cell.heightErosion + 1.0E-9D, "hydrology may lower but not raise terrain");
         assertTrue(cell.continentEdge >= 0.0D && cell.continentEdge <= 1.0D);
         assertTrue(cell.terrainRegionEdge >= 0.0D && cell.terrainRegionEdge <= 1.0D);
         assertTrue(cell.biomeRegionEdge >= 0.0D && cell.biomeRegionEdge <= 1.0D);
         assertTrue(cell.erosion >= 0.0D && cell.erosion <= 1.0D);
         assertTrue(cell.sediment >= 0.0D);
         assertTrue(cell.riverMask >= 0.0D && cell.riverMask <= 1.0D);
-        assertTrue(Double.isFinite(cell.riverDistance));
-        assertTrue(cell.riverWidth > 0.0D);
+        assertTrue(!Double.isNaN(cell.riverDistance));
+        assertTrue(cell.riverWidth >= 0.0D);
         assertTrue(cell.riverDepth >= 0.0D);
-        if (cell.riverDepth > 0.0D) {
+        if (cell.riverWidth == 0.0D) {
+            // Receiver-owned ocean cells deliberately clear linear-river metadata. Infinity is the
+            // canonical "no nearby channel" distance and avoids inventing a finite river start.
+            assertEquals(Double.POSITIVE_INFINITY, cell.riverDistance);
+            assertEquals(0.0D, cell.riverDepth);
+            assertTrue(Double.isNaN(cell.riverWaterSurfaceHeight));
+            assertTrue(Double.isNaN(cell.riverFlow));
+        } else if (cell.riverDepth > 0.0D) {
             assertTrue(Double.isFinite(cell.riverWaterSurfaceHeight));
             assertTrue(Double.isFinite(cell.riverFlow));
         }
         assertTrue(cell.temperature >= 0.0D && cell.temperature <= 1.0D);
         assertTrue(cell.moisture >= 0.0D && cell.moisture <= 1.0D);
         assertTrue(Double.isFinite(cell.gradient) && cell.gradient >= 0.0D);
-        assertEquals(cell.heightErosion - cell.height, cell.riverDepth, 1.0E-9D);
+        if (cell.riverWidth > 0.0D) {
+            assertEquals(cell.heightErosion - cell.height, cell.riverDepth, 1.0E-9D);
+        }
     }
 
     @Test
