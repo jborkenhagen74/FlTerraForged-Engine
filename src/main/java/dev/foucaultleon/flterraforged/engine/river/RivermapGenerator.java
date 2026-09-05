@@ -23,6 +23,9 @@ import java.util.PriorityQueue;
 public final class RivermapGenerator {
 
     private static final double MAX_WATER_SURFACE_GRADE = 0.18D;
+    private static final double WATERFALL_MINIMUM_TERRAIN_DROP = 2.25D;
+    private static final double WATERFALL_MINIMUM_WATER_DROP = 1.25D;
+    private static final double WATERFALL_MINIMUM_TERRAIN_GRADE = 0.55D;
 
     private static final int[] DX = {-1, 0, 1, -1, 1, -1, 0, 1};
     private static final int[] DZ = {-1, -1, -1, 0, 0, 1, 1, 1};
@@ -341,7 +344,6 @@ public final class RivermapGenerator {
         }
     }
 
-
     private static double localRunoff(double temperature, double moisture) {
         double boundedMoisture = Maths.clamp(moisture, 0.0D, 1.0D);
         double wetness = Maths.smooth(Maths.clamp((boundedMoisture - 0.14D) / 0.72D, 0.0D, 1.0D));
@@ -478,7 +480,7 @@ public final class RivermapGenerator {
             waterHeight[index] = Math.min(desiredWater, containmentCeiling);
         }
 
-        limitWaterSurfaceGrade(pathX, pathZ, waterHeight);
+        limitWaterSurfaceGrade(pathX, pathZ, terrainHeight, waterHeight);
 
         List<RiverPathPoint> path = new ArrayList<>(samples);
         for (int index = 0; index < samples; index++) {
@@ -494,14 +496,28 @@ public final class RivermapGenerator {
     private static void limitWaterSurfaceGrade(
             double[] pathX,
             double[] pathZ,
+            double[] terrainHeight,
             double[] waterHeight) {
+        // Water may never run uphill. Ordinary reaches are grade-limited to avoid the former
+        // one-block stair-step rivers, but a real terrain-backed downstream cliff is retained as a
+        // hydraulic discontinuity. This gives the block adapter enough vertical head to materialize
+        // an actual waterfall instead of flattening every river into a long shallow ramp.
         for (int index = 1; index < waterHeight.length; index++) {
             waterHeight[index] = Math.min(waterHeight[index - 1], waterHeight[index]);
         }
         for (int index = waterHeight.length - 2; index >= 0; index--) {
-            double distance = Math.hypot(
+            double distance = Math.max(1.0E-6D, Math.hypot(
                     pathX[index + 1] - pathX[index],
-                    pathZ[index + 1] - pathZ[index]);
+                    pathZ[index + 1] - pathZ[index]));
+            double terrainDrop = terrainHeight[index] - terrainHeight[index + 1];
+            double waterDrop = waterHeight[index] - waterHeight[index + 1];
+            boolean waterfall = terrainDrop >= WATERFALL_MINIMUM_TERRAIN_DROP
+                    && terrainDrop / distance >= WATERFALL_MINIMUM_TERRAIN_GRADE
+                    && waterDrop >= WATERFALL_MINIMUM_WATER_DROP;
+            if (waterfall) {
+                continue;
+            }
+
             double maximumUpstreamHeight = waterHeight[index + 1]
                     + Math.max(0.10D, distance * MAX_WATER_SURFACE_GRADE);
             waterHeight[index] = Math.min(waterHeight[index], maximumUpstreamHeight);
