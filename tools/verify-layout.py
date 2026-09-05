@@ -122,6 +122,9 @@ for token, label in (
         ("LakeField", "pond/lake construction"),
         ("accumulateFlow", "acyclic flow accumulation"),
         ("localRunoff", "climate-weighted runoff"),
+        ("resolveWaterSurface", "receiver-dominant node water solve"),
+        ("hydraulicProfile", "cascade/waterfall profile"),
+        ("enforceMonotonicWaterSurface", "monotonic steep-drop profile"),
 ):
     if token not in river_generator:
         errors.append(f"RivermapGenerator missing {label}")
@@ -192,9 +195,9 @@ for token in (
         errors.append(f"LakeField missing continuous shoreline-distance geometry: {token}")
 if "bilinearGradient" in lake_field:
     errors.append("LakeField must not divide shoreline distance by discontinuous local cell gradient")
-for token in ("MAX_WATER_SURFACE_GRADE", "limitWaterSurfaceGrade"):
-    if token not in (root / "src/main/java/dev/foucaultleon/flterraforged/engine/river/RivermapGenerator.java").read_text(encoding="utf-8"):
-        errors.append(f"RivermapGenerator missing bounded water grade: {token}")
+for token in ("MAX_WATER_SURFACE_GRADE", "limitNormalWaterSurfaceGrade", "MINIMUM_CASCADE_DROP", "MINIMUM_WATERFALL_DROP"):
+    if token not in river_generator:
+        errors.append(f"RivermapGenerator missing R44 water-profile invariant: {token}")
 
 river_tests = (root / "src/test/java/dev/foucaultleon/flterraforged/engine/river/RiverFoundationTest.java").read_text(encoding="utf-8")
 for token in (
@@ -204,10 +207,17 @@ for token in (
         "confluenceCannotCreateAQuantizedBedCliff"):
     if token not in river_tests:
         errors.append(f"Engine hydrology regression test missing: {token}")
+resolved_hydrology_tests = root / "src/test/java/dev/foucaultleon/flterraforged/engine/river/ResolvedHydrologyTest.java"
+if not resolved_hydrology_tests.is_file():
+    errors.append("missing R44 resolved-hydrology regression tests")
+else:
+    resolved_test_text = resolved_hydrology_tests.read_text(encoding="utf-8")
+    for token in ("confluenceUsesOneCanonicalReceiverLevel", "normalSourceLevelIsLimitedByReceiverGrade", "drainageCycleIsRejectedBeforeHydraulicSolve"):
+        if token not in resolved_test_text:
+            errors.append(f"R44 resolved-hydrology regression test missing: {token}")
 
-if 'VERSION = "0.1.0-SNAPSHOT-r32"' not in provider:
-    errors.append("Default engine provider must report r32")
-
+if 'VERSION = "0.1.0-SNAPSHOT-r44"' not in provider:
+    errors.append("Default engine provider must report r44")
 
 terrain_sampler = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/terrain/region/TerrainRegionSampler.java").read_text(encoding="utf-8")
 terrain_blender = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/terrain/Blender.java").read_text(encoding="utf-8")
@@ -234,4 +244,4 @@ if errors:
     print("\n".join(errors), file=sys.stderr)
     raise SystemExit(1)
 
-print("Engine layout verified: Java-only, ServiceLoader provider present, public Maven API model")
+print("Engine R44 layout verified: Java-only, resolved hydrology, ServiceLoader provider present")
