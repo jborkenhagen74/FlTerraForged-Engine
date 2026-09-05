@@ -1,20 +1,19 @@
 package dev.foucaultleon.flterraforged.engine;
 
 import dev.foucaultleon.flterraforged.engine.api.terrain.TerrainSample;
+import dev.foucaultleon.flterraforged.engine.internal.InlineSingleFlightCache;
 import dev.foucaultleon.flterraforged.engine.pipeline.WorldgenPipeline;
 import java.util.Arrays;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.Objects;
 
 /**
  * World-scoped cache of immutable, chunk-aligned final terrain-sample tiles.
  *
  * <p>The cache sits above the complete world-generation pipeline, so biome lookup, density shaping,
- * height queries and late reconciliation can reuse exactly the same final X/Z samples. Completed
- * tiles are immutable and bounded by an access-ordered LRU. Expensive tile generation always
- * happens outside the cache lock; a concurrent duplicate is discarded if another thread wins
- * insertion.</p>
+ * height queries and late reconciliation reuse exactly the same final X/Z samples. Completed tiles
+ * are immutable and bounded. A cold miss is generated once by the thread that wins synchronous
+ * single-flight ownership; concurrent callers for the same tile wait for and reuse that exact tile
+ * instead of regenerating it.</p>
  */
 final class WorldSampleCache {
 
@@ -22,7 +21,7 @@ final class WorldSampleCache {
     static final int DEFAULT_MAXIMUM_TILES = 256;
 
     private final WorldgenPipeline pipeline;
-    private final TileCache cache;
+    private final InlineSingleFlightCache<Long, TerrainSampleTile> cache;
 
     WorldSampleCache(WorldgenPipeline pipeline) {
         this(pipeline, DEFAULT_MAXIMUM_TILES);
@@ -33,7 +32,7 @@ final class WorldSampleCache {
         if (maximumTiles < 1) {
             throw new IllegalArgumentException("maximumTiles must be >= 1");
         }
-        this.cache = new TileCache(maximumTiles);
+        this.cache = new InlineSingleFlightCache<>(maximumTiles);
     }
 
     TerrainSample sample(int x, int z) {
@@ -65,36 +64,16 @@ final class WorldSampleCache {
     }
 
     void clear() {
-        synchronized (cache) {
-            cache.clear();
-        }
+        cache.clear();
     }
 
     int cachedTiles() {
-        synchronized (cache) {
-            return cache.size();
-        }
+        return cache.completedSize();
     }
 
     private TerrainSampleTile loadTile(int tileX, int tileZ) {
         long key = key(tileX, tileZ);
-        TerrainSampleTile tile;
-        synchronized (cache) {
-            tile = cache.get(key);
-        }
-        if (tile != null) {
-            return tile;
-        }
-
-        TerrainSampleTile generated = generate(tileX, tileZ);
-        synchronized (cache) {
-            TerrainSampleTile existing = cache.get(key);
-            if (existing == null) {
-                cache.put(key, generated);
-                return generated;
-            }
-            return existing;
-        }
+        return cache.get(key, () -> generate(tileX, tileZ));
     }
 
     private TerrainSampleTile generate(int tileX, int tileZ) {
@@ -137,22 +116,6 @@ final class WorldSampleCache {
 
         TerrainSample[] copySamples() {
             return samples.clone();
-        }
-    }
-
-    private static final class TileCache extends LinkedHashMap<Long, TerrainSampleTile> {
-
-        private static final long serialVersionUID = 1L;
-        private final int maximumSize;
-
-        TileCache(int maximumSize) {
-            super(maximumSize + 1, 0.75F, true);
-            this.maximumSize = maximumSize;
-        }
-
-        @Override
-        protected boolean removeEldestEntry(Map.Entry<Long, TerrainSampleTile> eldest) {
-            return size() > maximumSize;
         }
     }
 }
