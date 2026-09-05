@@ -9,12 +9,15 @@ import java.util.Objects;
 /**
  * Preserves topological continuity of the materialized wet core of refined river paths.
  *
- * <p>{@link RiverModel} deliberately refuses implausibly deep local incisions when a projected
- * channel crosses a residual ridge. At block resolution that safety valve can leave a one- or
- * two-column dry barrier across an otherwise continuous refined river path. This wrapper keeps the
- * wider bank/fringe safety behavior but guarantees a narrow hydraulic core along the winning
- * centerline. The correction is applied in Engine space before Minecraft materialization, so every
- * platform adapter and block provider receives the same connected watercourse semantics.</p>
+ * <p>The wrapper has two responsibilities. First, it closes one- or two-column dry barriers that
+ * can remain when the ordinary river model refuses an implausibly deep local incision. Second, it
+ * gives receiving water bodies authority over the final water level at a river mouth. Open ocean
+ * therefore wins over a river profile, and a material lake wins over the incoming river while a
+ * genuine terrain-backed drop immediately upstream is retained as a waterfall.</p>
+ *
+ * <p>All corrections happen in Engine space before Minecraft materialization. No block-provider or
+ * platform-specific information is required, so full-block and variable-height materializers see
+ * exactly the same hydraulic semantics.</p>
  */
 public final class RiverWetCoreConnectivity implements CellLookup {
 
@@ -24,12 +27,19 @@ public final class RiverWetCoreConnectivity implements CellLookup {
     private static final double FRINGE_MAXIMUM_CORRECTION = 8.0D;
     private static final double MINIMUM_WATER_DEPTH = 1.10D;
     private static final double CHANNEL_MATCH_EPSILON = 1.0E-6D;
+    private static final double OPEN_WATER_CONTINENT_EDGE = 0.14D;
+    private static final double OPEN_WATER_HEIGHT_MARGIN = 3.0D;
+    private static final double WATERFALL_MINIMUM_WATER_DROP = 1.25D;
+    private static final double WATERFALL_MINIMUM_TERRAIN_HEAD = 2.50D;
+    private static final int[] RECEIVER_PROBES = {4, 8};
+    private static final int[] PROBE_X = {-1, 1, 0, 0};
+    private static final int[] PROBE_Z = {0, 0, -1, 1};
 
     private final EngineContext world;
     private final RiverModel delegate;
 
     /**
-     * Creates a connectivity-preserving river lookup.
+     * Creates a connectivity- and receiver-aware river lookup.
      *
      * @param world immutable world context
      * @param delegate fully configured river model
@@ -45,7 +55,14 @@ public final class RiverWetCoreConnectivity implements CellLookup {
         Objects.requireNonNull(target, "target");
         delegate.lookup(x, z, target);
 
-        if (target.lake || target.lakeShore || Double.isFinite(target.riverWaterSurfaceHeight)) {
+        if (target.lake) {
+            return;
+        }
+        if (Double.isFinite(target.riverWaterSurfaceHeight)) {
+            applyReceivingWaterAuthority(x, z, target);
+            return;
+        }
+        if (target.lakeShore) {
             return;
         }
 
@@ -84,14 +101,81 @@ public final class RiverWetCoreConnectivity implements CellLookup {
         target.riverWaterSurfaceHeight = hit.waterSurfaceHeight();
         target.riverFlow = hit.flow();
         target.riverMask = Maths.smooth(Maths.clamp(hit.distance() / halfWidth, 0.0D, 1.0D));
+        applyReceivingWaterAuthority(x, z, target);
+    }
+
+    private void applyReceivingWaterAuthority(int x, int z, Cell target) {
+        double receiverLevel = Double.NaN;
+        int receiverPriority = 0;
+
+        if (isOpenOceanReceiver(target)) {
+            receiverLevel = world.seaLevel();
+            receiverPriority = 3;
+        }
+
+        if (target.lakeShore) {
+            double lakeLevel = nearbyLakeLevel(x, z);
+            if (Double.isFinite(lakeLevel) && receiverPriority < 2) {
+                receiverLevel = lakeLevel;
+                receiverPriority = 2;
+            }
+        }
+
+        if (receiverPriority == 0 || !Double.isFinite(receiverLevel)) {
+            return;
+        }
+
+        double currentLevel = target.riverWaterSurfaceHeight;
+        if (preserveWaterfallApproach(target, currentLevel, receiverLevel)) {
+            return;
+        }
+
+        double bed = Maths.clamp(
+                Math.min(target.height, receiverLevel - minimumDepth(receiverLevel)),
+                world.minY() + 1.0D,
+                world.maxYExclusive() - 2.0D);
+        target.height = bed;
+        target.riverWaterSurfaceHeight = receiverLevel;
+        target.riverDepth = Math.max(MINIMUM_WATER_DEPTH, receiverLevel - bed);
+    }
+
+    private boolean isOpenOceanReceiver(Cell target) {
+        return target.continentEdge <= OPEN_WATER_CONTINENT_EDGE
+                && target.heightErosion <= world.seaLevel() + OPEN_WATER_HEIGHT_MARGIN;
+    }
+
+    private double nearbyLakeLevel(int x, int z) {
+        Cell scratch = new Cell();
+        double best = Double.NaN;
+        for (int distance : RECEIVER_PROBES) {
+            for (int direction = 0; direction < PROBE_X.length; direction++) {
+                delegate.lookup(
+                        x + PROBE_X[direction] * distance,
+                        z + PROBE_Z[direction] * distance,
+                        scratch);
+                if (!scratch.lake || !Double.isFinite(scratch.riverWaterSurfaceHeight)) {
+                    continue;
+                }
+                if (!Double.isFinite(best) || scratch.riverWaterSurfaceHeight < best) {
+                    best = scratch.riverWaterSurfaceHeight;
+                }
+            }
+            if (Double.isFinite(best)) {
+                return best;
+            }
+        }
+        return best;
+    }
+
+    private static boolean preserveWaterfallApproach(
+            Cell target,
+            double currentLevel,
+            double receiverLevel) {
+        return currentLevel - receiverLevel >= WATERFALL_MINIMUM_WATER_DROP
+                && target.heightErosion - receiverLevel >= WATERFALL_MINIMUM_TERRAIN_HEAD;
     }
 
     private static boolean matchesSelectedChannel(RiverHit hit, Cell target) {
-        // RiverModel already selected the surface-aligned winner and stores its horizontal
-        // properties even when the local ridge guard keeps that column dry. The ordinary nearest
-        // query is used only to recover the water-surface value that was intentionally suppressed
-        // from the dry Cell. Requiring the same projected distance/width/flow prevents a deeper
-        // crossing channel from being resurrected merely because it is geometrically closer in X/Z.
         return Double.isFinite(target.riverDistance)
                 && Double.isFinite(target.riverWidth)
                 && Double.isFinite(target.riverFlow)
