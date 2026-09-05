@@ -1,5 +1,6 @@
 package dev.foucaultleon.flterraforged.engine;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -65,6 +66,23 @@ public final class EngineSmokeTest {
             TerrainSample first = world.sample(34, -19);
             TerrainSample second = world.sample(34, -19);
             assertSame(first, second, "Repeated final samples should come from the shared world cache");
+        }
+    }
+
+    @Test
+    void alignedTileSamplingMatchesPointSampling() {
+        try (TerrainEngine engine = new DefaultEngineProvider().create(EngineConfig.empty());
+             TerrainWorld world = engine.openWorld(new EngineContext(24680L, -64, 320, 63))) {
+            int originX = -32;
+            int originZ = 48;
+            TerrainSample[] tile = world.sampleTile(originX, originZ, 16);
+            TerrainSample[] expected = new TerrainSample[256];
+            for (int localZ = 0; localZ < 16; localZ++) {
+                for (int localX = 0; localX < 16; localX++) {
+                    expected[localZ * 16 + localX] = world.sample(originX + localX, originZ + localZ);
+                }
+            }
+            assertArrayEquals(expected, tile, "Bulk tile sampling must match canonical point samples");
         }
     }
 
