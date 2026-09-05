@@ -1,8 +1,8 @@
-name: Build R38
+name: Build R39
 
 on:
   push:
-    branches: [ 'revision/r38-water-authority-riparian' ]
+    branches: [ 'revision/r39-receiver-continuity' ]
   workflow_dispatch:
 
 permissions:
@@ -10,12 +10,12 @@ permissions:
 
 jobs:
   check:
-    name: Check R38 against R47 API
+    name: Check R39 against R49 API
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
-      - name: Checkout Engine R38
+      - name: Checkout Engine R39
         uses: actions/checkout@v6
 
       - name: Install Java 17 toolchain
@@ -38,26 +38,26 @@ jobs:
         with:
           gradle-version: '9.7.1'
 
-      - name: Verify Engine R38 receiving-water authority
-        run: python3 tools/verify-r38-water-authority.py
+      - name: Verify Engine R39 receiver continuity
+        run: python3 tools/verify-r39-receiver-continuity.py
 
-      - name: Checkout R47 host API source
+      - name: Checkout R49 host API source
         uses: actions/checkout@v6
         with:
           repository: jborkenhagen74/FlTerraForged
-          ref: revision/r47-hydraulic-shores
-          path: .ci/flterraforged-r47
+          ref: revision/r49-hydraulic-quantization
+          path: .ci/flterraforged-r49
 
-      - name: Build R47 Engine API local repository
-        run: gradle -p .ci/flterraforged-r47 -Dorg.gradle.java.installations.paths="$FLTERRAFORGED_JAVA17_HOME,$JAVA_HOME" --no-daemon --warning-mode all :engine-api:publish
+      - name: Build R49 Engine API local repository
+        run: gradle -p .ci/flterraforged-r49 -Dorg.gradle.java.installations.paths="$FLTERRAFORGED_JAVA17_HOME,$JAVA_HOME" --no-daemon --warning-mode all :engine-api:publish
 
-      - name: Build and test R38 against R47 Engine API
+      - name: Build and test R39 against R49 Engine API
         env:
-          FLTERRAFORGED_API_LOCAL_REPOSITORY: ${{ github.workspace }}/.ci/flterraforged-r47/build/maven-repository
+          FLTERRAFORGED_API_LOCAL_REPOSITORY: ${{ github.workspace }}/.ci/flterraforged-r49/build/maven-repository
         run: gradle -Dorg.gradle.java.installations.paths="$FLTERRAFORGED_JAVA17_HOME,$JAVA_HOME" --no-daemon --refresh-dependencies --warning-mode all clean check jar
 
-      - name: Collect R38 runtime JAR
-        id: collect_engine_r38
+      - name: Collect R39 runtime JAR
+        id: collect_engine_r39
         shell: bash
         run: |
           set -euo pipefail
@@ -73,34 +73,36 @@ jobs:
           fi
           short_sha="${GITHUB_SHA:0:7}"
           mkdir -p build/artifacts
-          path="build/artifacts/FlTerraForged-Engine-R38-${short_sha}.jar"
+          path="build/artifacts/FlTerraForged-Engine-R39-${short_sha}.jar"
           cp "${jars[0]}" "$path"
           echo "artifact_path=$path" >> "$GITHUB_OUTPUT"
           echo "jar_name=$(basename "$path")" >> "$GITHUB_OUTPUT"
 
-      - name: Upload R38 runtime JAR
-        id: upload_engine_r38
+      - name: Upload R39 runtime JAR
+        id: upload_engine_r39
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: FlTerraForged-Engine-R38
-          path: ${{ steps.collect_engine_r38.outputs.artifact_path }}
+          name: FlTerraForged-Engine-R39
+          path: ${{ steps.collect_engine_r39.outputs.artifact_path }}
           archive: false
           if-no-files-found: error
           retention-days: 30
 
-      - name: Add R38 artifact link to job summary
+      - name: Add R39 artifact link to job summary
         shell: bash
         env:
-          ARTIFACT_URL: ${{ steps.upload_engine_r38.outputs.artifact-url }}
-          ARTIFACT_DIGEST: ${{ steps.upload_engine_r38.outputs.artifact-digest }}
-          JAR_NAME: ${{ steps.collect_engine_r38.outputs.jar_name }}
+          ARTIFACT_URL: ${{ steps.upload_engine_r39.outputs.artifact-url }}
+          ARTIFACT_DIGEST: ${{ steps.upload_engine_r39.outputs.artifact-digest }}
+          JAR_NAME: ${{ steps.collect_engine_r39.outputs.jar_name }}
         run: |
           {
-            echo "### FlTerraForged Engine R38"
+            echo "### FlTerraForged Engine R39"
             echo
             echo "- JAR: \`$JAR_NAME\`"
-            echo "- Host API validation: FlTerraForged R47"
+            echo "- Host API validation: FlTerraForged R49"
             echo "- Receiving water authority: ocean/lake over incoming river"
+            echo "- Narrow lake wet-core bridge continuity: enabled"
+            echo "- Lake receiver probes: cached lake-only lookup"
             echo "- Waterfall preservation: enabled"
             echo "- SHA-256: \`$ARTIFACT_DIGEST\`"
             echo "- [Download artifact]($ARTIFACT_URL)"
