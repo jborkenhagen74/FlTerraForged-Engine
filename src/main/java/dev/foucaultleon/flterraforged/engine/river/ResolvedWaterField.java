@@ -17,6 +17,7 @@ import java.util.Objects;
  *     distance, otherwise {@link Double#POSITIVE_INFINITY}
  * @param width owner-specific channel/transition width, or zero for ocean/dry terrain
  * @param flow resolved river flow, zero for lakes, or {@link Double#NaN} when not applicable
+ * @param mask final hydraulic mask in the inclusive range {@code [0, 1]}
  */
 public record ResolvedWaterField(
         ResolvedWaterOwner owner,
@@ -24,7 +25,8 @@ public record ResolvedWaterField(
         double waterSurfaceHeight,
         double lateralDistance,
         double width,
-        double flow) {
+        double flow,
+        double mask) {
 
     private static final double MATERIAL_WATER_EPSILON = 0.05D;
 
@@ -37,6 +39,7 @@ public record ResolvedWaterField(
      * @param lateralDistance owner-specific lateral distance
      * @param width owner-specific width
      * @param flow owner-specific flow
+     * @param mask final hydraulic mask
      */
     public ResolvedWaterField {
         owner = Objects.requireNonNull(owner, "owner");
@@ -45,6 +48,9 @@ public record ResolvedWaterField(
         }
         if (width < 0.0D || Double.isNaN(width)) {
             throw new IllegalArgumentException("width must be >= 0 and not NaN");
+        }
+        if (!Double.isFinite(mask) || mask < 0.0D || mask > 1.0D) {
+            throw new IllegalArgumentException("mask must be finite and inside [0, 1]");
         }
         if (owner.wet()) {
             if (!Double.isFinite(waterSurfaceHeight)) {
@@ -71,7 +77,8 @@ public record ResolvedWaterField(
                 Double.NaN,
                 Double.POSITIVE_INFINITY,
                 0.0D,
-                Double.NaN);
+                Double.NaN,
+                1.0D);
     }
 
     /**
