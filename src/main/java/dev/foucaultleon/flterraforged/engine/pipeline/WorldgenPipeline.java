@@ -40,12 +40,17 @@ import java.util.Objects;
 /**
  * Fully assembled, immutable world-generation pipeline for one world seed.
  *
- * <p>The class is the single composition root for all engine stages. R40 resolves the physical
- * terrain in the order {@code continent -> terrain -> erosion -> river -> wet-core -> receiver overlay}
- * before final climate and classification. Drainage topology and visible river geometry now use the
- * same post-erosion terrain that is actually incised. Ocean and lake receiver regions are then
- * re-applied after river shaping, so an incoming river cannot overwrite the receiving water body's
- * bed or water level.</p>
+ * <p>R41 keeps the final physical order {@code continent -> terrain -> erosion -> river -> wet-core
+ * -> receiver overlay -> climate/classification}, but restores the cheap pre-erosion terrain lookup
+ * for coarse drainage planning and visible-path search. R40 routed every drainage probe through the
+ * hydraulic erosion stage. A single river-map miss therefore fanned out over a very large number of
+ * erosion regions before Minecraft could finish its first spawn chunk and could leave world creation
+ * apparently stuck at zero percent.</p>
+ *
+ * <p>Final river incision still uses the post-erosion surface. The receiver overlay remains after
+ * river shaping and is the authoritative reconciliation point for lake/ocean beds and water levels,
+ * so the R40 receiver fix does not require the coarse drainage graph itself to execute hydraulic
+ * erosion across its entire padded planning region.</p>
  */
 public final class WorldgenPipeline implements CellLookup {
 
@@ -129,21 +134,19 @@ public final class WorldgenPipeline implements CellLookup {
         TerrainClassificationSettings classificationSettings =
                 TerrainClassificationSettings.from(settings);
 
-        // R40 uses the post-erosion surface both for drainage topology and for the surface that is
-        // actually incised. This removes the previous base-terrain/post-erosion disagreement at
-        // lake and ocean transitions.
+        // Keep hydraulic erosion on the final local incision path only. The padded drainage graph
+        // samples thousands of coarse/refinement points per map; feeding those probes through the
+        // erosion-region generator was the R40 startup amplification. Receiver ownership below
+        // reconciles the final eroded geometry at lake/ocean boundaries.
         RiverModel riverModel = new RiverModel(
                 seed ^ RIVER_SEED,
                 context,
                 erosion,
-                erosion,
+                baseLookup,
                 drainageClimate,
                 RiverSettings.from(settings));
         CellLookup connectedRiver = new RiverWetCoreConnectivity(context, riverModel);
 
-        // Receiver masks are known by the hydrology model, but their geometry is applied last. The
-        // river stage keeps the immutable post-erosion surface in Cell.heightErosion, so the overlay
-        // can restore receiver geometry without a second terrain/erosion lookup per sample.
         this.river = new ReceivingWaterOverlay(
                 context,
                 riverModel,
