@@ -201,7 +201,8 @@ for token in ("MAX_WATER_SURFACE_GRADE", "limitNormalWaterSurfaceGrade", "MINIMU
 
 river_tests = (root / "src/test/java/dev/foucaultleon/flterraforged/engine/river/RiverFoundationTest.java").read_text(encoding="utf-8")
 for token in (
-        "refinedRiverGradeCannotCreateMultiBlockWaterBreaks",
+        "ordinaryRefinedRiverGradeCannotCreateMultiBlockWaterBreaks",
+        "explicitCascadeOrWaterfallRemainsContinuousAndEndsAtReceiverLevel",
         "broadLakeBedRemainsContinuousAcrossDrainageGridCells",
         "wetToDryRiverEdgeStaysAtTheWaterline",
         "confluenceCannotCreateAQuantizedBedCliff"):
