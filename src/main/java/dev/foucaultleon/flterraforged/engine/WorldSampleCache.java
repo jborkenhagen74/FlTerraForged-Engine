@@ -1,11 +1,10 @@
 package dev.foucaultleon.flterraforged.engine;
 
 import dev.foucaultleon.flterraforged.engine.api.terrain.TerrainSample;
+import dev.foucaultleon.flterraforged.engine.internal.BoundedConcurrentCache;
 import dev.foucaultleon.flterraforged.engine.pipeline.WorldgenPipeline;
 import java.util.Arrays;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -18,10 +17,10 @@ import java.util.concurrent.ConcurrentMap;
  *
  * <p>The cache sits above the complete world-generation pipeline, so biome lookup, density shaping,
  * height queries, hydrology guards and surface passes can reuse exactly the same final X/Z samples.
- * Completed tiles are immutable and bounded by an access-ordered LRU. Concurrent cold misses for
- * the same tile are coalesced through a single-flight map: one caller computes synchronously on its
- * current worker while all other callers reuse that result. No additional task is submitted to a
- * world-generation executor and expensive pipeline work never runs while the LRU monitor is held.</p>
+ * Completed tiles are stored in a bounded concurrent cache whose hit path does not acquire a global
+ * monitor. Concurrent cold misses for the same tile are coalesced through a single-flight map: one
+ * caller computes synchronously on its current worker while all other callers reuse that result. No
+ * additional task is submitted to a world-generation executor.</p>
  *
  * <p>R45 uses 8x8 tiles instead of 16x16 tiles. A sparse Minecraft height, biome or structure
  * lookup therefore evaluates a 10x10 pipeline envelope rather than an 18x18 envelope, while dense
@@ -36,7 +35,7 @@ final class WorldSampleCache {
     static final int DEFAULT_MAXIMUM_TILES = 4096;
 
     private final WorldgenPipeline pipeline;
-    private final TileCache cache;
+    private final BoundedConcurrentCache<Long, TerrainSampleTile> cache;
     private final ConcurrentMap<Long, CompletableFuture<TerrainSampleTile>> inFlight =
             new ConcurrentHashMap<>();
     private final ThreadLocal<Set<Long>> ownedKeys = ThreadLocal.withInitial(HashSet::new);
@@ -47,10 +46,7 @@ final class WorldSampleCache {
 
     WorldSampleCache(WorldgenPipeline pipeline, int maximumTiles) {
         this.pipeline = Objects.requireNonNull(pipeline, "pipeline");
-        if (maximumTiles < 1) {
-            throw new IllegalArgumentException("maximumTiles must be >= 1");
-        }
-        this.cache = new TileCache(maximumTiles);
+        this.cache = new BoundedConcurrentCache<>(maximumTiles);
     }
 
     TerrainSample sample(int x, int z) {
@@ -58,7 +54,7 @@ final class WorldSampleCache {
         int tileZ = Math.floorDiv(z, TILE_SIZE);
         long key = key(tileX, tileZ);
 
-        TerrainSampleTile tile = completed(key);
+        TerrainSampleTile tile = cache.get(key);
         if (tile == null) {
             tile = loadSingleFlight(key, tileX, tileZ);
         }
@@ -66,25 +62,15 @@ final class WorldSampleCache {
     }
 
     void clear() {
-        synchronized (cache) {
-            cache.clear();
-        }
+        cache.clear();
     }
 
     int cachedTiles() {
-        synchronized (cache) {
-            return cache.size();
-        }
+        return cache.size();
     }
 
     int inFlightTiles() {
         return inFlight.size();
-    }
-
-    private TerrainSampleTile completed(long key) {
-        synchronized (cache) {
-            return cache.get(key);
-        }
     }
 
     private TerrainSampleTile loadSingleFlight(long key, int tileX, int tileZ) {
@@ -106,16 +92,7 @@ final class WorldSampleCache {
         }
         try {
             TerrainSampleTile generated = generate(tileX, tileZ);
-            TerrainSampleTile retained;
-            synchronized (cache) {
-                TerrainSampleTile cached = cache.get(key);
-                if (cached == null) {
-                    cache.put(key, generated);
-                    retained = generated;
-                } else {
-                    retained = cached;
-                }
-            }
+            TerrainSampleTile retained = cache.putIfAbsent(key, generated);
             owned.complete(retained);
             return retained;
         } catch (Throwable throwable) {
@@ -185,22 +162,6 @@ final class WorldSampleCache {
                 throw new IllegalArgumentException("Coordinate lies outside terrain sample tile");
             }
             return samples[localZ * TILE_SIZE + localX];
-        }
-    }
-
-    private static final class TileCache extends LinkedHashMap<Long, TerrainSampleTile> {
-
-        private static final long serialVersionUID = 1L;
-        private final int maximumSize;
-
-        TileCache(int maximumSize) {
-            super(maximumSize + 1, 0.75F, true);
-            this.maximumSize = maximumSize;
-        }
-
-        @Override
-        protected boolean removeEldestEntry(Map.Entry<Long, TerrainSampleTile> eldest) {
-            return size() > maximumSize;
         }
     }
 }
