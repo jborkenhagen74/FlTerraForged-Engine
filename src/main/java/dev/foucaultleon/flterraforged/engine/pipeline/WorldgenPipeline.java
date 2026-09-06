@@ -16,6 +16,7 @@ import dev.foucaultleon.flterraforged.engine.continent.Continent;
 import dev.foucaultleon.flterraforged.engine.continent.ContinentSettings;
 import dev.foucaultleon.flterraforged.engine.erosion.ErosionPipeline;
 import dev.foucaultleon.flterraforged.engine.erosion.ErosionSettings;
+import dev.foucaultleon.flterraforged.engine.internal.Maths;
 import dev.foucaultleon.flterraforged.engine.noise.FractalNoise;
 import dev.foucaultleon.flterraforged.engine.noise.GradientNoise;
 import dev.foucaultleon.flterraforged.engine.noise.Interpolation;
@@ -39,7 +40,9 @@ import java.util.Objects;
  * <p>The exact path guarantees the ordering
  * {@code continent -> terrain -> erosion -> climate-runoff -> river -> climate}. R49 additionally
  * retains the pre-erosion terrain/climate branch as a dedicated placement sampler so host structure
- * discovery cannot cold-start expensive local erosion or hydrology before visible chunk progress.</p>
+ * discovery cannot cold-start expensive local erosion or hydrology before visible chunk progress.
+ * R51 makes sea level a hard hydrology invariant: coastal dry land is lifted through a narrow apron
+ * and river mouths converge to the canonical world sea level before immutable samples are exposed.</p>
  */
 public final class WorldgenPipeline implements CellLookup {
 
@@ -54,11 +57,18 @@ public final class WorldgenPipeline implements CellLookup {
     private static final long RIVER_SEED = 0x85EBCA77C2B2AE63L;
     private static final long CLIMATE_REGION_SEED = 0xC6BC279692B5C323L;
 
+    private static final double MARINE_APRON_CONTINENTALNESS = 0.38D;
+    private static final double RIVER_MOUTH_CONTINENTALNESS = 0.46D;
+    private static final double MAXIMUM_MOUTH_WATER_OFFSET = 6.0D;
+    private static final double MAXIMUM_MOUTH_DEPTH = 3.5D;
+    private static final double MINIMUM_MOUTH_DEPTH = 1.25D;
+
     private final EngineContext context;
     private final TerrainModel terrain;
     private final RiverModel river;
     private final ClimateModel climate;
     private final ClimateModel placementClimate;
+    private final TerrainClassificationSettings classificationSettings;
     private final TerrainClassifier classifier;
 
     /**
@@ -137,7 +147,8 @@ public final class WorldgenPipeline implements CellLookup {
                 moistureNoise,
                 climateRegions,
                 climateSettings);
-        this.classifier = new TerrainClassifier(TerrainClassificationSettings.from(settings));
+        this.classificationSettings = TerrainClassificationSettings.from(settings);
+        this.classifier = new TerrainClassifier(classificationSettings);
     }
 
     /** {@inheritDoc} */
@@ -168,10 +179,11 @@ public final class WorldgenPipeline implements CellLookup {
     public Cell sampleCell(int x, int z, Cell target) {
         Objects.requireNonNull(target, "target");
         climate.lookup(x, z, target);
-        double west = terrain.surfaceHeight(x - 1, z);
-        double east = terrain.surfaceHeight(x + 1, z);
-        double north = terrain.surfaceHeight(x, z - 1);
-        double south = terrain.surfaceHeight(x, z + 1);
+        stabilizeWaterLevels(target);
+        double west = stabilizedSurfaceHeight(x - 1, z);
+        double east = stabilizedSurfaceHeight(x + 1, z);
+        double north = stabilizedSurfaceHeight(x, z - 1);
+        double south = stabilizedSurfaceHeight(x, z + 1);
         target.gradient = Math.hypot((east - west) * 0.5D, (south - north) * 0.5D);
         return target;
     }
@@ -201,6 +213,7 @@ public final class WorldgenPipeline implements CellLookup {
     public TerrainSample placementSample(int x, int z) {
         Cell cell = new Cell();
         placementClimate.lookup(x, z, cell);
+        stabilizeWaterLevels(cell);
         double continentalness = cell.continentEdge * 2.0D - 1.0D;
         ClimateSample climateSample = new ClimateSample(cell.temperature, cell.moisture);
         TerrainType type = classifier.classify(
@@ -242,6 +255,7 @@ public final class WorldgenPipeline implements CellLookup {
             for (int dx = -1; dx <= size; dx++) {
                 Cell cell = new Cell();
                 climate.lookup(originX + dx, originZ + dz, cell);
+                stabilizeWaterLevels(cell);
                 cells[(dz + 1) * stride + (dx + 1)] = cell;
             }
         }
@@ -270,7 +284,53 @@ public final class WorldgenPipeline implements CellLookup {
      * @return final continuous surface height
      */
     public double surfaceHeight(int x, int z) {
-        return terrain.surfaceHeight(x, z);
+        return stabilizedSurfaceHeight(x, z);
+    }
+
+    private double stabilizedSurfaceHeight(int x, int z) {
+        Cell cell = terrain.sampleCell(x, z);
+        stabilizeWaterLevels(cell);
+        return cell.height;
+    }
+
+    private void stabilizeWaterLevels(Cell cell) {
+        double continentalness = cell.continentEdge * 2.0D - 1.0D;
+        double coast = classificationSettings.coastContinentalness();
+        double seaLevel = context.seaLevel();
+        boolean riverWater = Double.isFinite(cell.riverWaterSurfaceHeight);
+
+        // River profiles remain free inland, but once a low river reaches the marine transition its
+        // waterline is canonicalized to the same sea level used by the ocean materializer. This
+        // prevents a several-block water shelf at the final river segment.
+        if (riverWater
+                && !cell.lake
+                && continentalness <= coast + RIVER_MOUTH_CONTINENTALNESS
+                && cell.riverWaterSurfaceHeight <= seaLevel + MAXIMUM_MOUTH_WATER_OFFSET) {
+            double desiredDepth = Maths.clamp(
+                    Math.max(cell.riverDepth, MINIMUM_MOUTH_DEPTH),
+                    MINIMUM_MOUTH_DEPTH,
+                    MAXIMUM_MOUTH_DEPTH);
+            cell.riverWaterSurfaceHeight = seaLevel;
+            cell.height = Math.min(cell.height, seaLevel - desiredDepth);
+            cell.riverDepth = Math.max(0.0D, seaLevel - cell.height);
+        }
+
+        // The dry side of a shoreline may not remain several blocks below the adjacent global ocean
+        // surface. Lift only a narrow continentalness apron; the dry COAST semantic itself stays
+        // narrow and the change therefore removes vertical water walls without reintroducing huge
+        // beach biomes.
+        if (!cell.lake
+                && !Double.isFinite(cell.riverWaterSurfaceHeight)
+                && continentalness >= coast
+                && continentalness <= coast + MARINE_APRON_CONTINENTALNESS
+                && cell.height < seaLevel + 0.05D) {
+            double alpha = Maths.smooth(Maths.clamp(
+                    (continentalness - coast) / MARINE_APRON_CONTINENTALNESS,
+                    0.0D,
+                    1.0D));
+            double minimumDryHeight = seaLevel + 0.10D + alpha * 1.65D;
+            cell.height = Math.max(cell.height, minimumDryHeight);
+        }
     }
 
     private TerrainSample toTerrainSample(Cell center) {
