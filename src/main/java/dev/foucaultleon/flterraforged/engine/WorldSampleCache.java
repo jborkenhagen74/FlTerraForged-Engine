@@ -3,9 +3,11 @@ package dev.foucaultleon.flterraforged.engine;
 import dev.foucaultleon.flterraforged.engine.api.terrain.TerrainSample;
 import dev.foucaultleon.flterraforged.engine.pipeline.WorldgenPipeline;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
@@ -20,16 +22,23 @@ import java.util.concurrent.ConcurrentMap;
  * the same tile are coalesced through a single-flight map: one caller computes synchronously on its
  * current worker while all other callers reuse that result. No additional task is submitted to a
  * world-generation executor and expensive pipeline work never runs while the LRU monitor is held.</p>
+ *
+ * <p>R45 retains enough completed tiles to cover normal spawn-region generation across Minecraft's
+ * repeated biome, noise, surface and carver passes. The former 256-tile limit was smaller than the
+ * initial spawn working set and therefore evicted samples while they were still being generated.
+ * A thread-local ownership guard also turns an accidental recursive same-key request into an
+ * immediate diagnostic failure instead of letting a worker join its own unfinished future.</p>
  */
 final class WorldSampleCache {
 
     static final int TILE_SIZE = 16;
-    static final int DEFAULT_MAXIMUM_TILES = 256;
+    static final int DEFAULT_MAXIMUM_TILES = 1024;
 
     private final WorldgenPipeline pipeline;
     private final TileCache cache;
     private final ConcurrentMap<Long, CompletableFuture<TerrainSampleTile>> inFlight =
             new ConcurrentHashMap<>();
+    private final ThreadLocal<Set<Long>> ownedKeys = ThreadLocal.withInitial(HashSet::new);
 
     WorldSampleCache(WorldgenPipeline pipeline) {
         this(pipeline, DEFAULT_MAXIMUM_TILES);
@@ -78,12 +87,22 @@ final class WorldSampleCache {
     }
 
     private TerrainSampleTile loadSingleFlight(long key, int tileX, int tileZ) {
+        Set<Long> localOwnership = ownedKeys.get();
         CompletableFuture<TerrainSampleTile> owned = new CompletableFuture<>();
         CompletableFuture<TerrainSampleTile> existing = inFlight.putIfAbsent(key, owned);
         if (existing != null) {
+            if (localOwnership.contains(key)) {
+                throw new IllegalStateException(
+                        "Recursive terrain sample tile load detected for tile " + tileX + ',' + tileZ);
+            }
             return await(existing);
         }
 
+        if (!localOwnership.add(key)) {
+            inFlight.remove(key, owned);
+            throw new IllegalStateException(
+                    "Recursive terrain sample tile ownership detected for tile " + tileX + ',' + tileZ);
+        }
         try {
             TerrainSampleTile generated = generate(tileX, tileZ);
             TerrainSampleTile retained;
@@ -102,6 +121,10 @@ final class WorldSampleCache {
             owned.completeExceptionally(throwable);
             throw propagate(throwable);
         } finally {
+            localOwnership.remove(key);
+            if (localOwnership.isEmpty()) {
+                ownedKeys.remove();
+            }
             inFlight.remove(key, owned);
         }
     }
