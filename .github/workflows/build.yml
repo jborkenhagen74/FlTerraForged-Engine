@@ -34,7 +34,7 @@ jobs:
       - name: Verify layout
         run: python3 tools/verify-layout.py
 
-      - name: Build, test and create runtime JAR against published bulk-sampling Engine API
+      - name: Build, test and create runtime JAR against published Engine API
         run: gradle --no-daemon --refresh-dependencies clean check jar
 
       - name: Collect Engine JAR
@@ -52,7 +52,7 @@ jobs:
           fi
           mkdir -p build/artifacts
           short_sha="${GITHUB_SHA:0:7}"
-          artifact_path="build/artifacts/FlTerraForged-Engine-R52-${short_sha}.jar"
+          artifact_path="build/artifacts/FlTerraForged-Engine-R53-${short_sha}.jar"
           cp "${jars[0]}" "$artifact_path"
           echo "artifact_path=$artifact_path" >> "$GITHUB_OUTPUT"
           echo "jar_name=$(basename "$artifact_path")" >> "$GITHUB_OUTPUT"
@@ -74,12 +74,13 @@ jobs:
           JAR_NAME: ${{ steps.collect_engine.outputs.jar_name }}
         run: |
           {
-            echo "### FlTerraForged Engine R52 artifact"
+            echo "### FlTerraForged Engine R53 artifact"
             echo
             echo "- JAR: \`$JAR_NAME\`"
-            echo "- Coast: final physical surface is the single shoreline authority"
-            echo "- Water: continuous river-mouth blend and contiguous canonical ocean columns"
-            echo "- Tests: deterministic coast/ocean plausibility sampling included"
+            echo "- Water: final hydrology wet/dry state is quantized exactly once in ChunkSnapshot"
+            echo "- Inland water: no subsurface sea-level re-clamp"
+            echo "- Performance: snapshot volume and internal terrain-tile copies removed"
+            echo "- Tests: inland river/lake and fractional water regressions included"
             echo "- SHA-256: \`$ARTIFACT_DIGEST\`"
             echo "- [Download artifact]($ARTIFACT_URL)"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -89,7 +90,7 @@ jobs:
     if: >-
       github.event_name == 'push' &&
       (github.ref == 'refs/heads/develop' ||
-       github.ref == 'refs/heads/release/r52-coast-ocean-consistency')
+       github.ref == 'refs/heads/release/r53-water-state-consistency')
     needs: check
     runs-on: ubuntu-latest
     permissions:
@@ -120,4 +121,4 @@ jobs:
           publish_dir: ./build/maven-repository
           keep_files: true
           force_orphan: false
-          commit_message: "Publish Engine R52 ${{ github.sha }}"
+          commit_message: "Publish Engine R53 ${{ github.sha }}"
