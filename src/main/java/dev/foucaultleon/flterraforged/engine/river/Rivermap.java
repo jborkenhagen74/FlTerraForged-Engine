@@ -10,8 +10,8 @@ import java.util.Objects;
  * <p>R45 precomputes one axis-aligned bound per refined segment. Final terrain sampling only needs
  * nearby channels, so the surface-aligned hot path rejects distant segments before invoking the
  * considerably more expensive polyline projection in {@link RiverSegment#hit(double, double)}.
- * This keeps the semantic river graph unchanged while preventing spawn generation from repeatedly
- * projecting every terrain sample against every segment in every warm hydrology map.</p>
+ * R48 additionally removes isolated first-order drainage fall lines after flow accumulation so the
+ * immutable map exposes a catchment-shaped visible network instead of parallel D8 stripes.</p>
  */
 public final class Rivermap {
 
@@ -34,7 +34,8 @@ public final class Rivermap {
     public Rivermap(int regionX, int regionZ, List<RiverSegment> segments, LakeField lakes) {
         this.regionX = regionX;
         this.regionZ = regionZ;
-        this.segments = List.copyOf(Objects.requireNonNull(segments, "segments"));
+        this.segments = RiverNetworkFilter.visibleNetwork(
+                Objects.requireNonNull(segments, "segments"));
         this.lakes = Objects.requireNonNull(lakes, "lakes");
         List<IndexedSegment> bounds = new ArrayList<>(this.segments.size());
         for (RiverSegment segment : this.segments) {
