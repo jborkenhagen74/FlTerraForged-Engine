@@ -5,6 +5,7 @@ import dev.foucaultleon.flterraforged.engine.api.TerrainWorld;
 import dev.foucaultleon.flterraforged.engine.api.chunk.ChunkSnapshot;
 import dev.foucaultleon.flterraforged.engine.api.terrain.TerrainSample;
 import dev.foucaultleon.flterraforged.engine.chunk.ChunkSnapshotCache;
+import dev.foucaultleon.flterraforged.engine.chunk.TerrainPointSampler;
 import dev.foucaultleon.flterraforged.engine.pipeline.WorldgenPipeline;
 import java.util.Objects;
 
@@ -26,7 +27,18 @@ public final class DefaultTerrainWorld implements TerrainWorld {
         this.context = Objects.requireNonNull(context, "context");
         this.pipeline = new WorldgenPipeline(context, Objects.requireNonNull(settings, "settings"));
         this.sampleCache = new WorldSampleCache(pipeline);
-        this.chunkCache = new ChunkSnapshotCache(context, sampleCache::sample);
+        TerrainPointSampler sampler = new TerrainPointSampler() {
+            @Override
+            public TerrainSample sample(int x, int z) {
+                return sampleCache.sample(x, z);
+            }
+
+            @Override
+            public TerrainSample[] sampleChunk(int chunkX, int chunkZ) {
+                return sampleCache.sampleChunk(chunkX, chunkZ);
+            }
+        };
+        this.chunkCache = new ChunkSnapshotCache(context, sampler);
     }
 
     /** {@inheritDoc} */
@@ -39,6 +51,12 @@ public final class DefaultTerrainWorld implements TerrainWorld {
     @Override
     public TerrainSample sample(int x, int z) {
         return sampleCache.sample(x, z);
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public TerrainSample placementSample(int x, int z) {
+        return pipeline.placementSample(x, z);
     }
 
     /** {@inheritDoc} */
