@@ -22,7 +22,7 @@ public final class TerrainClassifier {
 
     /** Creates a terrain classifier using conservative standalone defaults. */
     public TerrainClassifier() {
-        this(new TerrainClassificationSettings(4.0D, -0.72D, 2.0D, -0.35D, 0.75D, 2.5D));
+        this(new TerrainClassificationSettings(4.0D, -0.72D, 1.25D, -0.69D, 0.75D, 2.5D));
     }
 
     /**
@@ -102,11 +102,17 @@ public final class TerrainClassifier {
             boolean lakeShore) {
         Objects.requireNonNull(baseType, "baseType");
         Objects.requireNonNull(river, "river");
+
+        boolean submerged = height < seaLevel - 0.05D;
         boolean belowSea = height < seaLevel - 1.50D;
         boolean oceanward = continentalness < settings.coastContinentalness();
         boolean deepEnough = height < seaLevel - settings.oceanDepthBelowSea();
+
+        // R49 treats all submerged oceanward shelf terrain as ocean. COAST is reserved for the
+        // narrow dry shoreline strip that Minecraft can legitimately map to beach biomes.
         if ((deepEnough && oceanward)
-                || (continentalness < settings.oceanContinentalness() && belowSea)) {
+                || (continentalness < settings.oceanContinentalness() && belowSea)
+                || (submerged && oceanward)) {
             return StandardTerrainTypes.OCEAN;
         }
         if (lake && river.hasWaterSurfaceHeight()) {
@@ -118,10 +124,8 @@ public final class TerrainClassifier {
         if (lakeShore) {
             return LAKE_SHORE;
         }
-        // A low elevation alone does not make an inland plain a coast. Coastal semantics require
-        // both proximity to the continent edge and a surface near sea level. This also prevents
-        // beach biomes (and their structures) from leaking far inland.
         if (continentalness < settings.coastContinentalness()
+                && height >= seaLevel - 0.05D
                 && height <= seaLevel + settings.coastHeightAboveSea()) {
             return StandardTerrainTypes.COAST;
         }
