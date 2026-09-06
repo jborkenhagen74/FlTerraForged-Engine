@@ -32,13 +32,13 @@ final class R45WorldgenStallGuardTest {
         EngineContext context = new EngineContext(991337L, -64, 320, 63);
         CellLookup terrain = (x, z, target) -> {
             target.reset();
-            target.height = 142.0D - z * 0.025D + Math.abs(x - 240.0D) * 0.01D;
+            target.height = 142.0D - z * 0.025D + Math.abs(x - 120.0D) * 0.01D;
             target.heightErosion = target.height;
             target.continentEdge = 0.85D;
         };
         RiverModel model = new RiverModel(991337L, context, terrain, terrain, settings);
 
-        model.sample(240, 240);
+        model.sample(120, 120);
 
         assertEquals(
                 1,
