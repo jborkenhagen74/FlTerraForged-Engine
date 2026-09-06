@@ -22,6 +22,9 @@ final class SubsurfaceGenerator {
     private static final long LAVA_SALT = 0x7F21C54DA893B60EL;
     private static final double MIN_WET_DEPTH = 0.05D;
     private static final double MOUTH_CLAMP_HEIGHT = 6.0D;
+    private static final int DRY_SURFACE_SEAL_DEPTH = 7;
+    private static final int INLAND_WATER_SEAL_DEPTH = 12;
+    private static final int OCEAN_SEAL_DEPTH = 18;
 
     private final EngineContext context;
 
@@ -62,9 +65,8 @@ final class SubsurfaceGenerator {
                 context.maxYExclusive() - 2);
         int solidTop = surfaceY + 1;
         int waterTop = solidTop;
-        boolean marine = StandardTerrainTypes.OCEAN.equals(sample.terrainType())
-                || StandardTerrainTypes.COAST.equals(sample.terrainType());
-        if (marine) {
+        boolean ocean = StandardTerrainTypes.OCEAN.equals(sample.terrainType());
+        if (ocean) {
             waterTop = Math.max(waterTop, context.seaLevel() + 1);
         }
         RiverSample hydrology = sample.river();
@@ -72,7 +74,7 @@ final class SubsurfaceGenerator {
                 && hydrology.depth() > MIN_WET_DEPTH
                 && hydrology.waterSurfaceHeight() > sample.surfaceHeight()) {
             double waterSurface = hydrology.waterSurfaceHeight();
-            if (marine
+            if (ocean
                     || (surfaceY <= context.seaLevel() + 2
                             && waterSurface <= context.seaLevel() + MOUTH_CLAMP_HEIGHT)) {
                 waterSurface = Math.min(waterSurface, context.seaLevel());
@@ -107,6 +109,7 @@ final class SubsurfaceGenerator {
         int naturalTopY = Math.max(surfaceY, column.waterTopExclusive() - 1);
         int bedrockThickness = 1 + (int) Math.floor(unitHash(x, context.minY(), z, FLOOR_SALT) * 4.0D);
         int lavaLevel = context.minY() + Math.max(10, context.height() / 24);
+        int minimumVoidDepth = minimumVoidDepth(column);
         VerticalNoiseSampler caveA = new VerticalNoiseSampler(x, z, 42.0D, 30.0D, 42.0D, CAVE_A_SALT);
         VerticalNoiseSampler caveB = new VerticalNoiseSampler(x, z, 58.0D, 37.0D, 58.0D, CAVE_B_SALT);
         VerticalNoiseSampler cavern = new VerticalNoiseSampler(x, z, 92.0D, 54.0D, 92.0D, CAVERN_SALT);
@@ -127,7 +130,15 @@ final class SubsurfaceGenerator {
                 material = NaturalMaterial.SURFACE;
             } else {
                 int depth = surfaceY - y;
-                if (isNaturalVoid(y, depth, column.soilDepth(), caveA, caveB, cavern, ravine)) {
+                if (isNaturalVoid(
+                        y,
+                        depth,
+                        column.soilDepth(),
+                        minimumVoidDepth,
+                        caveA,
+                        caveB,
+                        cavern,
+                        ravine)) {
                     if (y <= lavaLevel && unitHash(x, y, z, LAVA_SALT) > 0.34D) {
                         material = NaturalMaterial.LAVA;
                     } else if (y <= column.groundwaterY()) {
@@ -147,15 +158,26 @@ final class SubsurfaceGenerator {
         }
     }
 
+    private static int minimumVoidDepth(ColumnSnapshot column) {
+        if (!column.hasSurfaceWater()) {
+            return DRY_SURFACE_SEAL_DEPTH;
+        }
+        if (StandardTerrainTypes.OCEAN.equals(column.terrain().terrainType())) {
+            return OCEAN_SEAL_DEPTH;
+        }
+        return INLAND_WATER_SEAL_DEPTH;
+    }
+
     private boolean isNaturalVoid(
             int y,
             int depth,
             int soilDepth,
+            int minimumVoidDepth,
             VerticalNoiseSampler caveA,
             VerticalNoiseSampler caveB,
             VerticalNoiseSampler cavern,
             VerticalNoiseSampler ravine) {
-        if (depth <= Math.max(7, soilDepth + 3) || y <= context.minY() + 5) {
+        if (depth <= Math.max(minimumVoidDepth, soilDepth + 3) || y <= context.minY() + 5) {
             return false;
         }
         double caveAValue = caveA.sample(y);
