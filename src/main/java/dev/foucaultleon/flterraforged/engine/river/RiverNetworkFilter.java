@@ -12,6 +12,7 @@ import java.util.Set;
 final class RiverNetworkFilter {
 
     private static final int MINIMUM_FILTER_SIZE = 12;
+    private static final int MINIMUM_NETWORK_SPAN = 320;
     private static final double MATURE_TRUNK_FACTOR = 2.60D;
 
     private RiverNetworkFilter() {
@@ -25,15 +26,17 @@ final class RiverNetworkFilter {
      * are useful to accumulate catchment flow, but materializing all of them produces the striped
      * landscape seen in R47. R48 derives Strahler order from the already resolved directed graph and
      * keeps higher-order rivers, the last tributary edge entering a confluence, and sufficiently
-     * mature first-order trunks. Small networks are left untouched to avoid erasing isolated creeks.
-     * The operation is deterministic and does not resample terrain.</p>
+     * mature first-order trunks. Small or spatially local creek graphs are left untouched; hierarchy
+     * filtering is a macro-catchment operation and must not erase compact drainage systems or the
+     * synthetic graphs used to verify hydraulic invariants. The operation is deterministic and does
+     * not resample terrain.</p>
      *
      * @param segments resolved directed river segments
      * @return immutable visible subset
      */
     static List<RiverSegment> visibleNetwork(List<RiverSegment> segments) {
         Objects.requireNonNull(segments, "segments");
-        if (segments.size() < MINIMUM_FILTER_SIZE) {
+        if (segments.size() < MINIMUM_FILTER_SIZE || networkSpan(segments) < MINIMUM_NETWORK_SPAN) {
             return List.copyOf(segments);
         }
 
@@ -65,6 +68,20 @@ final class RiverNetworkFilter {
             }
         }
         return List.copyOf(visible);
+    }
+
+    private static int networkSpan(List<RiverSegment> segments) {
+        int minX = Integer.MAX_VALUE;
+        int minZ = Integer.MAX_VALUE;
+        int maxX = Integer.MIN_VALUE;
+        int maxZ = Integer.MIN_VALUE;
+        for (RiverSegment segment : segments) {
+            minX = Math.min(minX, Math.min(segment.startX(), segment.endX()));
+            minZ = Math.min(minZ, Math.min(segment.startZ(), segment.endZ()));
+            maxX = Math.max(maxX, Math.max(segment.startX(), segment.endX()));
+            maxZ = Math.max(maxZ, Math.max(segment.startZ(), segment.endZ()));
+        }
+        return Math.max(maxX - minX, maxZ - minZ);
     }
 
     private static int streamOrder(
