@@ -28,8 +28,8 @@ final class EngineChunkSnapshot implements ChunkSnapshot {
         this.chunkZ = chunkZ;
         this.minY = minY;
         this.maxYExclusive = maxYExclusive;
-        this.columns = Objects.requireNonNull(columns, "columns").clone();
-        this.materials = Objects.requireNonNull(materials, "materials").clone();
+        this.columns = Objects.requireNonNull(columns, "columns");
+        this.materials = Objects.requireNonNull(materials, "materials");
         int expectedColumns = WIDTH * WIDTH;
         int expectedMaterials = expectedColumns * (maxYExclusive - minY);
         if (this.columns.length != expectedColumns) {
@@ -38,6 +38,10 @@ final class EngineChunkSnapshot implements ChunkSnapshot {
         if (this.materials.length != expectedMaterials) {
             throw new IllegalArgumentException("material volume does not match world height");
         }
+        // SubsurfaceGenerator allocates both arrays exclusively for this snapshot and never exposes
+        // them afterwards. Taking ownership here avoids cloning roughly one complete vertical chunk
+        // volume per generated chunk while preserving external immutability: neither backing array
+        // is returned by this implementation.
     }
 
     @Override
