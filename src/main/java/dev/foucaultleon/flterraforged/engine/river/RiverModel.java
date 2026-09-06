@@ -4,10 +4,9 @@ import dev.foucaultleon.flterraforged.engine.api.EngineContext;
 import dev.foucaultleon.flterraforged.engine.api.river.RiverSample;
 import dev.foucaultleon.flterraforged.engine.cell.Cell;
 import dev.foucaultleon.flterraforged.engine.cell.CellLookup;
+import dev.foucaultleon.flterraforged.engine.internal.BoundedConcurrentCache;
 import dev.foucaultleon.flterraforged.engine.internal.Maths;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -19,10 +18,10 @@ import java.util.concurrent.ConcurrentMap;
  * Thread-safe hydrology facade backed by cached immutable river maps.
  *
  * <p>Linear channels and depression-filled inland water are resolved together. Completed maps are
- * held in a bounded LRU. Concurrent cold misses for the same hydrology region use exact-key
- * single-flight ownership: one caller generates the immutable map synchronously while duplicate
- * callers reuse the same result. Expensive generation never executes while the LRU monitor is held
- * and unrelated region keys remain fully independent.</p>
+ * held in a bounded concurrent cache whose hit path does not acquire a global monitor. Concurrent
+ * cold misses for the same hydrology region use exact-key single-flight ownership: one caller
+ * generates the immutable map synchronously while duplicate callers reuse the same result. Unrelated
+ * region keys remain fully independent.</p>
  *
  * <p>R45 assigns every X/Z column to exactly one canonical lake map. The padded map already contains
  * enough drainage context to resolve basins at its edges; probing up to eight neighboring maps for
@@ -47,7 +46,7 @@ public final class RiverModel implements CellLookup {
     private final CellLookup erodedTerrain;
     private final RiverSettings settings;
     private final RivermapGenerator generator;
-    private final MapCache cache;
+    private final BoundedConcurrentCache<Long, Rivermap> cache;
     private final ConcurrentMap<Long, CompletableFuture<Rivermap>> inFlight = new ConcurrentHashMap<>();
     private final ThreadLocal<Set<Long>> ownedMapKeys = ThreadLocal.withInitial(HashSet::new);
 
@@ -99,7 +98,7 @@ public final class RiverModel implements CellLookup {
                 Objects.requireNonNull(drainageTerrain, "drainageTerrain"),
                 drainageClimate,
                 settings);
-        this.cache = new MapCache(settings.cacheSize());
+        this.cache = new BoundedConcurrentCache<>(settings.cacheSize());
     }
 
     /**
@@ -176,11 +175,6 @@ public final class RiverModel implements CellLookup {
         double finalHeight;
         boolean carveableWetChannel = false;
         if (wetChannel) {
-            // A river bed is a hydraulic profile, not eroded terrain with an arbitrary depth
-            // subtracted from it. Limiting depth growth by horizontal distance makes the bed
-            // Lipschitz-continuous for ordinary river grades. Explicit R44 cascade/waterfall
-            // profiles remain continuous because their water surface itself is continuous and
-            // receiver-dominant even when the grade is intentionally steep.
             double desiredBed = river.waterSurfaceHeight() - desiredWaterDepth;
             double requiredIncision = Math.max(0.0D, baseHeight - desiredBed);
             carveableWetChannel = requiredIncision
@@ -255,9 +249,6 @@ public final class RiverModel implements CellLookup {
         if (!wetChannel) {
             return 0.0D;
         }
-        // Depth is a function of centerline distance, not of the winning segment width or flow.
-        // At a confluence, adjacent columns can legitimately choose different source segments;
-        // deriving the bed from width/flow there would create a discontinuous trench wall.
         double centerDepth = minimumWaterDepth(river.waterSurfaceHeight());
         double gradeLimitedDepth = centerDepth - river.distance() * MAXIMUM_BED_GRADE;
         return Maths.clamp(
@@ -395,8 +386,8 @@ public final class RiverModel implements CellLookup {
      *
      * <p>Cold misses use exact-key single flight. The owner computes inline on its existing caller
      * thread. Waiters for the same region join only that owner's future; no world-generation task
-     * is submitted and unrelated regions do not serialize behind hash-stripe locks. R45 also
-     * detects recursive same-thread ownership before a worker can wait on its own future.</p>
+     * is submitted and unrelated regions do not serialize behind a completed-map cache monitor.
+     * R45 also detects recursive same-thread ownership before a worker can wait on its own future.</p>
      *
      * @param regionX river-region X index
      * @param regionZ river-region Z index
@@ -404,14 +395,8 @@ public final class RiverModel implements CellLookup {
      */
     public Rivermap map(int regionX, int regionZ) {
         long key = (((long) regionX) << 32) ^ (regionZ & 0xFFFFFFFFL);
-        Rivermap completed = completedMap(key);
+        Rivermap completed = cache.get(key);
         return completed == null ? loadSingleFlight(key, regionX, regionZ) : completed;
-    }
-
-    private Rivermap completedMap(long key) {
-        synchronized (cache) {
-            return cache.get(key);
-        }
     }
 
     private Rivermap loadSingleFlight(long key, int regionX, int regionZ) {
@@ -433,16 +418,7 @@ public final class RiverModel implements CellLookup {
         }
         try {
             Rivermap generated = generator.generate(regionX, regionZ);
-            Rivermap retained;
-            synchronized (cache) {
-                Rivermap cached = cache.get(key);
-                if (cached == null) {
-                    cache.put(key, generated);
-                    retained = generated;
-                } else {
-                    retained = cached;
-                }
-            }
+            Rivermap retained = cache.putIfAbsent(key, generated);
             owned.complete(retained);
             return retained;
         } catch (Throwable throwable) {
@@ -481,30 +457,12 @@ public final class RiverModel implements CellLookup {
     }
 
     int cachedMaps() {
-        synchronized (cache) {
-            return cache.size();
-        }
+        return cache.size();
     }
 
     private LakeHit nearestLake(int x, int z) {
         int regionX = Math.floorDiv(x, settings.regionSize());
         int regionZ = Math.floorDiv(z, settings.regionSize());
         return map(regionX, regionZ).lake(x, z);
-    }
-
-    private static final class MapCache extends LinkedHashMap<Long, Rivermap> {
-
-        private static final long serialVersionUID = 1L;
-        private final int maximumSize;
-
-        MapCache(int maximumSize) {
-            super(maximumSize + 1, 0.75F, true);
-            this.maximumSize = maximumSize;
-        }
-
-        @Override
-        protected boolean removeEldestEntry(Map.Entry<Long, Rivermap> eldest) {
-            return size() > maximumSize;
-        }
     }
 }
