@@ -68,7 +68,10 @@ public final class ChunkSnapshotCache {
         Set<Long> ownership = ownedKeys.get();
         ownership.add(key);
         try {
-            TerrainSample[] terrain = sampleChunk(chunkX, chunkZ);
+            TerrainSample[] terrain = samples.sampleChunk(chunkX, chunkZ);
+            if (terrain.length != 256) {
+                throw new IllegalStateException("terrain sampler returned an invalid chunk sample count");
+            }
             ChunkSnapshot generated = generator.generate(chunkX, chunkZ, terrain);
             ChunkSnapshot canonical = completed.putIfAbsent(key, generated);
             owned.complete(canonical);
@@ -97,18 +100,6 @@ public final class ChunkSnapshotCache {
      */
     public int size() {
         return completed.size();
-    }
-
-    private TerrainSample[] sampleChunk(int chunkX, int chunkZ) {
-        TerrainSample[] result = new TerrainSample[256];
-        int originX = chunkX << 4;
-        int originZ = chunkZ << 4;
-        for (int localZ = 0; localZ < 16; localZ++) {
-            for (int localX = 0; localX < 16; localX++) {
-                result[localZ * 16 + localX] = samples.sample(originX + localX, originZ + localZ);
-            }
-        }
-        return result;
     }
 
     private static ChunkSnapshot join(CompletableFuture<ChunkSnapshot> future) {
