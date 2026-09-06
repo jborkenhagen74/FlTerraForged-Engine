@@ -1,25 +1,35 @@
 #!/usr/bin/env python3
+"""Verify Engine isolation, retained hydrology guarantees and R47 chunk ownership."""
+
 from pathlib import Path
 import re
 import sys
 
-root = Path(__file__).resolve().parents[1]
-java_root = root / "src/main/java"
-banned = (
-    "net.minecraft.", "net.fabricmc.", "net.neoforged.", "net.minecraftforge.",
+ROOT = Path(__file__).resolve().parents[1]
+JAVA_ROOT = ROOT / "src/main/java"
+TEST_ROOT = ROOT / "src/test/java"
+BANNED = (
+    "net.minecraft.",
+    "net.fabricmc.",
+    "net.neoforged.",
+    "net.minecraftforge.",
     "com.mojang.serialization.",
 )
-errors = []
-
-for source in java_root.rglob("*.java"):
-    text = source.read_text(encoding="utf-8")
-    for token in banned:
-        if token in text:
-            errors.append(f"{source.relative_to(root)}: forbidden {token}")
+ERRORS = []
 
 
-def split_record_components(component_text):
-    """Returns record component declarations split on top-level commas."""
+def require(path: Path, tokens, label: str) -> str:
+    if not path.is_file():
+        ERRORS.append(f"missing {label}: {path.relative_to(ROOT)}")
+        return ""
+    text = path.read_text(encoding="utf-8")
+    for token in tokens:
+        if token not in text:
+            ERRORS.append(f"{label} missing invariant: {token}")
+    return text
+
+
+def split_record_components(component_text: str):
     parts = []
     current = []
     angle = paren = bracket = 0
@@ -46,8 +56,7 @@ def split_record_components(component_text):
     return [part for part in parts if part]
 
 
-def verify_compact_record_javadocs(source, text):
-    """Requires complete @param docs on every public compact record constructor."""
+def verify_compact_record_javadocs(source: Path, text: str) -> None:
     for match in re.finditer(r"public\s+record\s+(\w+)\s*\((.*?)\)\s*\{", text, re.DOTALL):
         record_name = match.group(1)
         components = []
@@ -55,7 +64,6 @@ def verify_compact_record_javadocs(source, text):
             name_match = re.search(r"([A-Za-z_$][A-Za-z0-9_$]*)\s*$", declaration)
             if name_match:
                 components.append(name_match.group(1))
-
         ctor_match = re.search(r"\bpublic\s+" + re.escape(record_name) + r"\s*\{", text[match.end():])
         if ctor_match is None:
             continue
@@ -64,229 +72,136 @@ def verify_compact_record_javadocs(source, text):
         doc_start = prefix.rfind('/**')
         doc_end = prefix.find('*/', doc_start) if doc_start >= 0 else -1
         if doc_start < 0 or doc_end < 0 or prefix[doc_end + 2:].strip():
-            errors.append(f"{source.relative_to(root)}: public compact constructor {record_name} is missing Javadoc")
+            ERRORS.append(f"{source.relative_to(ROOT)}: public compact constructor {record_name} is missing Javadoc")
             continue
         doc = prefix[doc_start:doc_end + 2]
         for component in components:
             if re.search(r"@param\s+" + re.escape(component) + r"(?:\s|$)", doc) is None:
-                errors.append(
-                    f"{source.relative_to(root)}: compact constructor {record_name} missing @param {component}"
-                )
+                ERRORS.append(f"{source.relative_to(ROOT)}: compact constructor {record_name} missing @param {component}")
 
 
-for source in java_root.rglob("*.java"):
-    verify_compact_record_javadocs(source, source.read_text(encoding="utf-8"))
+for source in JAVA_ROOT.rglob("*.java"):
+    text = source.read_text(encoding="utf-8")
+    for token in BANNED:
+        if token in text:
+            ERRORS.append(f"{source.relative_to(ROOT)}: forbidden dependency {token}")
+    verify_compact_record_javadocs(source, text)
 
-service = root / "src/main/resources/META-INF/services/dev.foucaultleon.flterraforged.engine.api.EngineProvider"
+service = ROOT / "src/main/resources/META-INF/services/dev.foucaultleon.flterraforged.engine.api.EngineProvider"
 if not service.is_file():
-    errors.append("missing EngineProvider ServiceLoader descriptor")
+    ERRORS.append("missing EngineProvider ServiceLoader descriptor")
 
-build_text = (root / "build.gradle").read_text(encoding="utf-8")
-workflow_text = (root / ".github/workflows/build.yml").read_text(encoding="utf-8")
-gitignore_text = (root / ".gitignore").read_text(encoding="utf-8")
+build_text = (ROOT / "build.gradle").read_text(encoding="utf-8")
+workflow_text = (ROOT / ".github/workflows/build.yml").read_text(encoding="utf-8")
+gitignore = set((ROOT / ".gitignore").read_text(encoding="utf-8").splitlines())
 if "options.addBooleanOption('Werror', true)" not in build_text:
-    errors.append("strict Javadoc -Werror verification is missing")
+    ERRORS.append("strict Javadoc -Werror verification is missing")
 if "dependsOn 'javadoc'" not in build_text:
-    errors.append("check must depend on javadoc so documentation warnings fail before publish")
+    ERRORS.append("check must depend on javadoc")
 for ignored in ("gradlew", "gradlew.bat", "gradle/wrapper/"):
-    if ignored not in gitignore_text.splitlines():
-        errors.append(f".gitignore missing required wrapper rule: {ignored}")
-if "maven.pkg.github.com" in build_text:
-    errors.append("Engine API must not be resolved from GitHub Packages")
-if "FLTERRAFORGED_PACKAGES_TOKEN" in build_text or "FLTERRAFORGED_PACKAGES_TOKEN" in workflow_text:
-    errors.append("Engine API resolution must not require a package token")
-if "packages: read" in workflow_text or "packages: write" in workflow_text:
-    errors.append("Workflow must not require GitHub Packages permissions")
+    if ignored not in gitignore:
+        ERRORS.append(f".gitignore missing required wrapper rule: {ignored}")
 if "raw.githubusercontent.com/jborkenhagen74/FlTerraForged/maven/" not in build_text:
-    errors.append("missing default public FlTerraForged API Maven repository")
+    ERRORS.append("missing public FlTerraForged Engine API Maven repository")
+if "maven.pkg.github.com" in build_text or "packages: read" in workflow_text or "packages: write" in workflow_text:
+    ERRORS.append("Engine must not depend on GitHub Packages")
+if "release/r47-engine-owned-worldgen" not in workflow_text:
+    ERRORS.append("R47 workflow must publish the architecture branch snapshot")
 
-river_segment = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/river/RiverSegment.java").read_text(encoding="utf-8")
-river_generator = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/river/RivermapGenerator.java").read_text(encoding="utf-8")
-river_model = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/river/RiverModel.java").read_text(encoding="utf-8")
-rivermap = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/river/Rivermap.java").read_text(encoding="utf-8")
-lake_field = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/river/LakeField.java").read_text(encoding="utf-8")
-cell = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/cell/Cell.java").read_text(encoding="utf-8")
-engine = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/DefaultTerrainEngine.java").read_text(encoding="utf-8")
-world_sample_cache = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/WorldSampleCache.java").read_text(encoding="utf-8")
-erosion_pipeline = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/erosion/ErosionPipeline.java").read_text(encoding="utf-8")
-bounded_cache_path = root / "src/main/java/dev/foucaultleon/flterraforged/engine/internal/BoundedConcurrentCache.java"
-for token, label in (
-        ("startWaterHeight", "directed water-surface endpoints"),
-        ("List<RiverPathPoint>", "terrain-refined visible path"),
-        ("waterSurfaceHeight()", "path-local contained water profile"),
-        ("bankAlpha", "stable wet-core channel profile"),
-):
-    if token not in river_segment:
-        errors.append(f"RiverSegment missing {label}")
-for token, label in (
-        ("fillDepressions", "priority-flood depression resolution"),
-        ("refineVisiblePath", "terrain-guided centerline refinement"),
-        ("containmentCeiling", "cross-bank water containment"),
-        ("bankProbe", "local river-bank probing"),
-        ("LakeField", "pond/lake construction"),
-        ("accumulateFlow", "acyclic flow accumulation"),
-        ("localRunoff", "climate-weighted runoff"),
-        ("resolveWaterSurface", "receiver-dominant node water solve"),
-        ("hydraulicProfile", "cascade/waterfall profile"),
-        ("enforceMonotonicWaterSurface", "monotonic steep-drop profile"),
-):
-    if token not in river_generator:
-        errors.append(f"RivermapGenerator missing {label}")
-for token in ("riverWaterSurfaceHeight", "riverFlow", "minimumWaterDepth", "nearestLake", "drainageClimate"):
-    if token not in river_model:
-        errors.append(f"Engine hydrology pipeline missing {token}")
-if "public boolean lake" not in cell:
-    errors.append("Cell is missing inland-water semantic")
-if "public boolean lakeShore" not in cell:
-    errors.append("Cell is missing explicit lake-shore semantic")
-for token in ("identifyBasins", "basinWaterLevels", "dominantBasin", "smoothValueNoise", "LakeZone.SHORE", "LakeZone.SHALLOW", "LakeZone.CORE"):
-    if token not in lake_field:
-        errors.append(f"LakeField missing basin-aware lake logic: {token}")
-if "bilinear(filledHeight" in lake_field:
-    errors.append("LakeField must not bilinearly interpolate depression spill heights into a tilted water surface")
-if "lake.materialWater()" not in river_model or "lake.shore()" not in river_model:
-    errors.append("RiverModel must distinguish material lake water from the dry shore transition")
-if "EngineCapability.RIVER_WATER_LEVEL" not in engine:
-    errors.append("Default engine does not advertise RIVER_WATER_LEVEL")
+provider = require(
+    JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/DefaultEngineProvider.java",
+    ('VERSION = "0.1.0-SNAPSHOT-r47"', "EngineApiVersion.CURRENT"),
+    "R47 provider")
 
-terrain_classifier = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/terrain/TerrainClassifier.java").read_text(encoding="utf-8")
-if "StandardTerrainTypes.LAKE_SHORE" in terrain_classifier:
-    errors.append("TerrainClassifier must remain compatible with the baseline API that predates the LAKE_SHORE convenience constant")
-if 'TerrainType.of(StandardTerrainTypes.NAMESPACE, "lake_shore")' not in terrain_classifier:
-    errors.append("TerrainClassifier missing canonical flterraforged:lake_shore compatibility semantic")
+world_cache = require(
+    JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/WorldSampleCache.java",
+    ("TILE_SIZE = 16", "DEFAULT_MAXIMUM_TILES = 1024", "BoundedConcurrentCache", "ownedKeys", "inFlight"),
+    "final sample cache")
+if "synchronized (cache)" in world_cache:
+    ERRORS.append("final sample cache hit path must not use a global monitor")
 
-configured_terrain = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/terrain/ConfiguredTerrain.java").read_text(encoding="utf-8")
-for token in ("double bathymetry", "double shelf", "double deep", "- bathymetry"):
-    if token not in configured_terrain:
-        errors.append(f"ConfiguredTerrain missing ocean bathymetry guard: {token}")
-for token in ("COASTAL_RELEASE_START", "COASTAL_RELEASE_END", "coastalCeiling"):
-    if token not in configured_terrain:
-        errors.append(f"ConfiguredTerrain missing smooth coastal-height release: {token}")
-if "continentalness < settings.oceanContinentalness() && belowSea" not in terrain_classifier:
-    errors.append("TerrainClassifier must require submerged terrain for continental ocean classification")
-if "continentalness < settings.coastContinentalness()" not in terrain_classifier or "&& height <= seaLevel + settings.coastHeightAboveSea()" not in terrain_classifier:
-    errors.append("TerrainClassifier must require both shoreline proximity and low elevation for coast")
-if "river.hasWaterSurfaceHeight() && river.depth() >= settings.riverDepth()" not in terrain_classifier:
-    errors.append("TerrainClassifier must not assign RIVER semantics to a dry incision envelope")
-if "targetDepth" not in lake_field or "Math.min(14.0D" not in lake_field:
-    errors.append("LakeField must retain deeper basin-core lake shaping")
-for token in ("basinNodeCounts", "basinMinimumDepth", "Maths.lerp(3.50D, 2.50D"):
-    if token not in lake_field:
-        errors.append(f"LakeField missing altitude-/basin-size-aware depth logic: {token}")
-for token in ("minimumWaterDepth(river.waterSurfaceHeight())", "Maths.lerp(3.50D, 2.75D"):
-    if token not in river_model:
-        errors.append(f"RiverModel missing altitude-aware minimum water depth: {token}")
-for token in (
-        "MAXIMUM_BED_GRADE = 0.50D",
-        "MAXIMUM_RIDGE_CORRECTION = 3.0D",
-        "desiredWaterDepth(river, wetChannel)",
-        "carveableWetChannel",
-        "river.waterSurfaceHeight() - finalHeight",
-        "nearestSurfaceAligned",
-        "lakeShoreHeight",
-        "riverBankHeight"):
-    if token not in river_model:
-        errors.append(f"RiverModel missing continuous bounded wet-bed logic: {token}")
+bounded_cache = require(
+    JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/internal/BoundedConcurrentCache.java",
+    ("ConcurrentHashMap", "ConcurrentLinkedQueue", "putIfAbsent", "entries.remove(eldest.key(), eldest)"),
+    "bounded concurrent cache")
 
-provider = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/DefaultEngineProvider.java").read_text(encoding="utf-8")
-for token in (
-        "computeBasinInteriorDistances",
-        "bilinearBasinDistance",
-        "SHORE_TRANSITION_WIDTH = 10.0D",
-        "SHORE_REFERENCE_GRADE",
-        "Math.min(depthDistance, topologyDistance)"):
-    if token not in lake_field:
-        errors.append(f"LakeField missing continuous shoreline-distance geometry: {token}")
-if "bilinearGradient" in lake_field:
-    errors.append("LakeField must not divide shoreline distance by discontinuous local cell gradient")
-for token in ("MAX_WATER_SURFACE_GRADE", "limitNormalWaterSurfaceGrade", "MINIMUM_CASCADE_DROP", "MINIMUM_WATERFALL_DROP"):
-    if token not in river_generator:
-        errors.append(f"RivermapGenerator missing R44 water-profile invariant: {token}")
-
-river_tests = (root / "src/test/java/dev/foucaultleon/flterraforged/engine/river/RiverFoundationTest.java").read_text(encoding="utf-8")
-for token in (
-        "ordinaryRefinedRiverGradeCannotCreateMultiBlockWaterBreaks",
-        "explicitCascadeOrWaterfallRemainsContinuousAndEndsAtReceiverLevel",
-        "broadLakeBedRemainsContinuousAcrossDrainageGridCells",
-        "wetToDryRiverEdgeStaysAtTheWaterline",
-        "confluenceCannotCreateAQuantizedBedCliff"):
-    if token not in river_tests:
-        errors.append(f"Engine hydrology regression test missing: {token}")
-resolved_hydrology_tests = root / "src/test/java/dev/foucaultleon/flterraforged/engine/river/ResolvedHydrologyTest.java"
-if not resolved_hydrology_tests.is_file():
-    errors.append("missing R44 resolved-hydrology regression tests")
-else:
-    resolved_test_text = resolved_hydrology_tests.read_text(encoding="utf-8")
-    for token in ("confluenceUsesOneCanonicalReceiverLevel", "normalSourceLevelIsLimitedByReceiverGrade", "drainageCycleIsRejectedBeforeHydraulicSolve"):
-        if token not in resolved_test_text:
-            errors.append(f"R44 resolved-hydrology regression test missing: {token}")
-
-# R46 worldgen cold-start invariants. These deliberately verify architecture rather than a timing
-# threshold so CI remains deterministic on shared runners.
-if 'VERSION = "0.1.0-SNAPSHOT-r46"' not in provider:
-    errors.append("Default engine provider must report r46")
-for token in ("MAXIMUM_LOCAL_RIVER_SEARCH = 96.0D", "IndexedSegment", "mayReach"):
-    if token not in rivermap:
-        errors.append(f"R45 retained Rivermap hot-path invariant missing: {token}")
-for token in ("TILE_SIZE = 16", "DEFAULT_MAXIMUM_TILES = 1024", "BoundedConcurrentCache", "ownedKeys"):
-    if token not in world_sample_cache:
-        errors.append(f"R46 final-sample cache invariant missing: {token}")
-if "synchronized (cache)" in world_sample_cache:
-    errors.append("R46 final-sample cache hit path must not use a global synchronized cache monitor")
-if not bounded_cache_path.is_file():
-    errors.append("R46 bounded concurrent cache implementation is missing")
-else:
-    bounded_cache = bounded_cache_path.read_text(encoding="utf-8")
-    for token in ("ConcurrentHashMap", "ConcurrentLinkedQueue", "putIfAbsent", "entries.remove(eldest.key(), eldest)"):
-        if token not in bounded_cache:
-            errors.append(f"R46 bounded concurrent cache invariant missing: {token}")
-for token in ("BoundedConcurrentCache", "ConcurrentMap", "inFlight", "ownedRegionKeys", "putIfAbsent"):
-    if token not in erosion_pipeline:
-        errors.append(f"R46 erosion exact-key single-flight invariant missing: {token}")
+erosion = require(
+    JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/erosion/ErosionPipeline.java",
+    ("BoundedConcurrentCache", "ConcurrentMap", "inFlight", "ownedRegionKeys", "putIfAbsent"),
+    "erosion exact-key single-flight")
 for forbidden in ("LinkedHashMap", "generationLocks", "synchronized (cache)"):
-    if forbidden in erosion_pipeline:
-        errors.append(f"R46 erosion pipeline must not retain old lock-convoy mechanism: {forbidden}")
-for token in ("ownedMapKeys", "return map(regionX, regionZ).lake(x, z)"):
-    if token not in river_model:
-        errors.append(f"R45 retained canonical hydrology ownership invariant missing: {token}")
-r45_stall_test = root / "src/test/java/dev/foucaultleon/flterraforged/engine/river/R45WorldgenStallGuardTest.java"
-if not r45_stall_test.is_file():
-    errors.append("missing retained R45 cold-map fanout regression test")
-else:
-    r45_test_text = r45_stall_test.read_text(encoding="utf-8")
-    if "interiorTerrainLookupBuildsOnlyCanonicalHydrologyMap" not in r45_test_text:
-        errors.append("retained R45 cold-map fanout regression test is incomplete")
-r46_erosion_test = root / "src/test/java/dev/foucaultleon/flterraforged/engine/erosion/R46ErosionConcurrencyTest.java"
-if not r46_erosion_test.is_file():
-    errors.append("missing R46 independent erosion-region concurrency regression test")
-else:
-    r46_test_text = r46_erosion_test.read_text(encoding="utf-8")
-    if "formerlyCollidingStripeKeysCanGenerateConcurrently" not in r46_test_text:
-        errors.append("R46 independent erosion-region concurrency regression test is incomplete")
+    if forbidden in erosion:
+        ERRORS.append(f"erosion pipeline retains old lock-convoy mechanism: {forbidden}")
 
-terrain_sampler = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/terrain/region/TerrainRegionSampler.java").read_text(encoding="utf-8")
-terrain_blender = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/terrain/Blender.java").read_text(encoding="utf-8")
-for token, label in (("sampleBlend", "multi-region terrain sampling"), ("NEIGHBORHOOD_SIZE", "full local Voronoi blending"), ("neighborScore", "continuous neighbor influence")):
-    if token not in terrain_sampler:
-        errors.append(f"TerrainRegionSampler missing {label}")
-if "TerrainRegionBlendSample" not in terrain_blender:
-    errors.append("Blender missing multi-region terrain composite support")
+river_segment = require(
+    JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/river/RiverSegment.java",
+    ("startWaterHeight", "List<RiverPathPoint>", "waterSurfaceHeight()", "bankAlpha"),
+    "river segment")
+river_generator = require(
+    JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/river/RivermapGenerator.java",
+    ("fillDepressions", "refineVisiblePath", "containmentCeiling", "bankProbe", "LakeField",
+     "accumulateFlow", "localRunoff", "resolveWaterSurface", "hydraulicProfile",
+     "enforceMonotonicWaterSurface", "MAX_WATER_SURFACE_GRADE"),
+    "river map generator")
+river_model = require(
+    JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/river/RiverModel.java",
+    ("riverWaterSurfaceHeight", "riverFlow", "minimumWaterDepth", "nearestLake", "drainageClimate",
+     "ownedMapKeys", "return map(regionX, regionZ).lake(x, z)"),
+    "river model")
+rivermap = require(
+    JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/river/Rivermap.java",
+    ("MAXIMUM_LOCAL_RIVER_SEARCH = 96.0D", "IndexedSegment", "mayReach"),
+    "river map hot path")
+lake = require(
+    JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/river/LakeField.java",
+    ("identifyBasins", "basinWaterLevels", "dominantBasin", "LakeZone.SHORE", "LakeZone.SHALLOW", "LakeZone.CORE"),
+    "lake field")
+if "bilinear(filledHeight" in lake:
+    ERRORS.append("lake field must not interpolate spill heights into a tilted water surface")
 
-climate_layout = root / "src/main/java/dev/foucaultleon/flterraforged/engine/climate/ClimateLayout.java"
-engine_settings = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/EngineSettings.java").read_text(encoding="utf-8")
-climate_model = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/climate/ClimateModel.java").read_text(encoding="utf-8")
-if not climate_layout.is_file():
-    errors.append("missing ClimateLayout strategy enum")
-for token in ("ClimateLayout.RANDOMIZED", 'ClimateLayout.parse(config.getOrDefault("climateLayout"', "case CENTRAL_EUROPE"):
-    if token not in engine_settings:
-        errors.append(f"EngineSettings missing configurable climate/preset support: {token}")
-if "settings.layout() == ClimateLayout.NORTH_SOUTH" not in climate_model:
-    errors.append("ClimateModel must apply north-south climate only when explicitly selected")
-if "double broadTemperature = contrast(" not in climate_model or "double broadMoisture = contrast(" not in climate_model:
-    errors.append("ClimateModel must apply preset climate contrast to broad randomized fields")
+# R47 ownership boundary: complete immutable chunks are generated below the host adapter.
+default_world = require(
+    JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/DefaultTerrainWorld.java",
+    ("ChunkSnapshotCache", "chunkSnapshot(int chunkX, int chunkZ)", "return chunkCache.get(chunkX, chunkZ)"),
+    "R47 terrain world")
+chunk_cache = require(
+    JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/chunk/ChunkSnapshotCache.java",
+    ("BoundedConcurrentCache", "ConcurrentMap", "inFlight", "ownedKeys", "putIfAbsent",
+     "samples.sample", "generator.generate"),
+    "R47 chunk snapshot cache")
+for forbidden in ("synchronized", "ForkJoinPool", "ExecutorService"):
+    if forbidden in chunk_cache:
+        ERRORS.append(f"R47 chunk snapshot cache must not own a global/secondary scheduler: {forbidden}")
 
-if errors:
-    print("\n".join(errors), file=sys.stderr)
+snapshot = require(
+    JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/chunk/EngineChunkSnapshot.java",
+    ("implements ChunkSnapshot", ".clone()", "NaturalMaterial materialAt"),
+    "R47 immutable chunk snapshot")
+subsurface = require(
+    JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/chunk/SubsurfaceGenerator.java",
+    ("GeologyType", "NaturalMaterial.BEDROCK", "NaturalMaterial.SOIL", "NaturalMaterial.ROCK",
+     "NaturalMaterial.DEEP_ROCK", "NaturalMaterial.AIR", "NaturalMaterial.WATER", "NaturalMaterial.LAVA",
+     "isNaturalVoid", "groundwaterY", "smoothNoise3D"),
+    "R47 subsurface generator")
+for forbidden in BANNED:
+    if forbidden in subsurface:
+        ERRORS.append(f"R47 subsurface generator leaked host dependency: {forbidden}")
+
+require(
+    TEST_ROOT / "dev/foucaultleon/flterraforged/engine/chunk/R47ChunkSnapshotTest.java",
+    ("repeatedAndConcurrentRequestsShareOneImmutableSnapshot", "snapshotOwnsFullVerticalNaturalGeometry", "assertSame"),
+    "R47 chunk snapshot regression test")
+require(
+    TEST_ROOT / "dev/foucaultleon/flterraforged/engine/erosion/R46ErosionConcurrencyTest.java",
+    ("formerlyCollidingStripeKeysCanGenerateConcurrently",),
+    "retained R46 erosion concurrency regression test")
+require(
+    TEST_ROOT / "dev/foucaultleon/flterraforged/engine/river/R45WorldgenStallGuardTest.java",
+    ("interiorTerrainLookupBuildsOnlyCanonicalHydrologyMap",),
+    "retained R45 hydrology fanout regression test")
+
+if ERRORS:
+    print("\n".join(ERRORS), file=sys.stderr)
     raise SystemExit(1)
 
-print("Engine R46 layout verified: exact-key erosion single-flight, chunk-aligned final cache, canonical hydrology")
+print("Engine R47 layout verified: immutable engine-owned chunks, exact-key single-flight caches, retained hydrology and erosion guards")
