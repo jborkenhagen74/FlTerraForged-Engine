@@ -43,22 +43,38 @@ public final class Rivermap {
         this.indexedSegments = List.copyOf(bounds);
     }
 
-    /** Returns the aligned river-region X index. */
+    /**
+     * Returns the aligned river-region X index.
+     *
+     * @return river-region X index
+     */
     public int regionX() {
         return regionX;
     }
 
-    /** Returns the aligned river-region Z index. */
+    /**
+     * Returns the aligned river-region Z index.
+     *
+     * @return river-region Z index
+     */
     public int regionZ() {
         return regionZ;
     }
 
-    /** Returns the immutable directed channel segments owned by this map. */
+    /**
+     * Returns the immutable directed channel segments owned by this map.
+     *
+     * @return immutable segment list
+     */
     public List<RiverSegment> segments() {
         return segments;
     }
 
-    /** Returns the immutable padded lake field. */
+    /**
+     * Returns the immutable padded lake field.
+     *
+     * @return lake field
+     */
     public LakeField lakes() {
         return lakes;
     }
