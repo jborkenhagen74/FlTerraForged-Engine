@@ -161,7 +161,7 @@ if "NaturalMaterial.values()[" in snapshot:
     ERRORS.append("materialAt must not allocate an enum values array per voxel")
 require(
     JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/chunk/SubsurfaceGenerator.java",
-    ("naturalTopY", "VerticalNoiseSampler", "MOUTH_CLAMP_HEIGHT", "Math.min(waterSurface, context.seaLevel())"),
+    ("naturalTopY", "ValueNoise3D.VerticalSampler", "MOUTH_CLAMP_HEIGHT", "Math.min(waterSurface, context.seaLevel())"),
     "R51 subsurface generator")
 
 require(
