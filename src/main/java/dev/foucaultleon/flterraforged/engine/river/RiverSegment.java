@@ -75,9 +75,10 @@ public record RiverSegment(
     /**
      * Samples the segment at the closest projected point on the refined path.
      *
-     * <p>The channel has a gently flattened wet core before it rises toward the banks. This avoids
-     * one-block-thin wet centerlines and guarantees the configured hydrologic water surface has a
-     * stable channel to occupy.</p>
+     * <p>The channel has a gently flattened wet core before it rises toward the banks. R48 also
+     * smooths only interior water-profile samples before interpolation. Coarse drainage-node
+     * endpoints remain exact, preserving confluence continuity, while local containment probes can
+     * no longer create a sequence of unnecessarily abrupt one-block water shelves.</p>
      *
      * @param x world X coordinate
      * @param z world Z coordinate
@@ -95,8 +96,8 @@ public record RiverSegment(
         double surfaceHeight = Maths.lerp(
                 pathStart.terrainHeight(), pathEnd.terrainHeight(), projection.localAlpha());
         double waterSurfaceHeight = Maths.lerp(
-                pathStart.waterSurfaceHeight(),
-                pathEnd.waterSurfaceHeight(),
+                smoothedWaterSurface(projection.segmentIndex()),
+                smoothedWaterSurface(projection.segmentIndex() + 1),
                 projection.localAlpha());
         return new RiverHit(
                 projection.distance(),
@@ -106,6 +107,22 @@ public record RiverSegment(
                 waterSurfaceHeight,
                 flow,
                 false);
+    }
+
+    private double smoothedWaterSurface(int index) {
+        if (index <= 0) {
+            return startWaterHeight;
+        }
+        if (index >= path.size() - 1) {
+            return endWaterHeight;
+        }
+        double previous = path.get(index - 1).waterSurfaceHeight();
+        double current = path.get(index).waterSurfaceHeight();
+        double next = path.get(index + 1).waterSurfaceHeight();
+        double smoothed = (previous + current * 2.0D + next) * 0.25D;
+        double lower = Math.min(previous, next);
+        double upper = Math.max(previous, next);
+        return Maths.clamp(smoothed, lower, upper);
     }
 
     private Projection projection(double x, double z) {
