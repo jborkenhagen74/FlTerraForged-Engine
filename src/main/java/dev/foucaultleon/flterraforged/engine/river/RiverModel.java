@@ -19,20 +19,13 @@ import java.util.concurrent.ConcurrentMap;
  *
  * <p>Linear channels and depression-filled inland water are resolved together. Completed maps are
  * held in a bounded concurrent cache whose hit path does not acquire a global monitor. Concurrent
- * cold misses for the same hydrology region use exact-key single-flight ownership: one caller
- * generates the immutable map synchronously while duplicate callers reuse the same result. Unrelated
- * region keys remain fully independent.</p>
+ * cold misses for the same hydrology region use exact-key single-flight ownership while unrelated
+ * region keys remain independent.</p>
  *
- * <p>R45 assigns every X/Z column to exactly one canonical lake map. The padded map already contains
- * enough drainage context to resolve basins at its edges; probing up to eight neighboring maps for
- * every lake sample only multiplied cold-map construction and was the main spawn-time working-set
- * explosion. Linear channels retain their narrow boundary probes because their owned segments may
- * physically cross a region edge.</p>
- *
- * <p>R47 centers the internal hydrology ownership lattice around the world origin by translating
- * hydrology coordinates by half a region. Terrain and climate delegates are translated back before
- * sampling, so the drainage implementation remains unchanged while world coordinate {@code (0, 0)}
- * lies in the middle of one canonical map instead of on a four-map intersection.</p>
+ * <p>R47 centers the internal hydrology ownership lattice around the world origin. R50 keeps the
+ * single canonical map hit path for ordinary lake samples, but reconciles overlapping padded lake
+ * basins through their stable basin anchor. A lake crossing a map boundary therefore receives one
+ * canonical water level without restoring the former eight-neighbor probe on every column.</p>
  */
 public final class RiverModel implements CellLookup {
 
@@ -52,6 +45,7 @@ public final class RiverModel implements CellLookup {
     private final RiverSettings settings;
     private final RivermapGenerator generator;
     private final BoundedConcurrentCache<Long, Rivermap> cache;
+    private final BoundedConcurrentCache<Long, Double> canonicalLakeLevels;
     private final ConcurrentMap<Long, CompletableFuture<Rivermap>> inFlight = new ConcurrentHashMap<>();
     private final ThreadLocal<Set<Long>> ownedMapKeys = ThreadLocal.withInitial(HashSet::new);
 
@@ -76,10 +70,6 @@ public final class RiverModel implements CellLookup {
     /**
      * Creates a river model with a pre-hydrology climate lookup for runoff weighting.
      *
-     * <p>The climate lookup must not depend on this river model. It is sampled only while building
-     * drainage maps and allows dry catchments to contribute less runoff while preserving large
-     * through-flowing rivers that originated in wetter terrain.</p>
-     *
      * @param seed hydrology seed
      * @param world immutable world context
      * @param erodedTerrain terrain stage after erosion and before river/lake incision
@@ -102,6 +92,7 @@ public final class RiverModel implements CellLookup {
         CellLookup climate = drainageClimate == null ? null : centeredGeneratorLookup(drainageClimate);
         this.generator = new RivermapGenerator(seed, world, drainage, climate, settings);
         this.cache = new BoundedConcurrentCache<>(settings.cacheSize());
+        this.canonicalLakeLevels = new BoundedConcurrentCache<>(Math.max(64, settings.cacheSize() * 64));
     }
 
     /**
@@ -264,7 +255,6 @@ public final class RiverModel implements CellLookup {
         if (!Double.isFinite(waterSurfaceHeight)) {
             return settings.minimumWaterDepth();
         }
-
         double altitude = waterSurfaceHeight;
         double target;
         if (altitude <= world.seaLevel() + 1.0D) {
@@ -288,9 +278,6 @@ public final class RiverModel implements CellLookup {
 
     /**
      * Samples hydrology using the stable Engine API representation.
-     *
-     * <p>Lake samples reuse the API river container for water-surface compatibility and advertise
-     * zero flow; the final terrain type separately identifies them as lakes.</p>
      *
      * @param x world X coordinate
      * @param z world Z coordinate
@@ -389,11 +376,6 @@ public final class RiverModel implements CellLookup {
     /**
      * Returns one cached or newly generated immutable river map.
      *
-     * <p>Cold misses use exact-key single flight. The owner computes inline on its existing caller
-     * thread. Waiters for the same region join only that owner's future; no world-generation task
-     * is submitted and unrelated regions do not serialize behind a completed-map cache monitor.
-     * R45 also detects recursive same-thread ownership before a worker can wait on its own future.</p>
-     *
      * @param regionX river-region X index
      * @param regionZ river-region Z index
      * @return completed map
@@ -415,7 +397,6 @@ public final class RiverModel implements CellLookup {
             }
             return await(existing);
         }
-
         if (!localOwnership.add(key)) {
             inFlight.remove(key, owned);
             throw new IllegalStateException(
@@ -470,7 +451,26 @@ public final class RiverModel implements CellLookup {
         int hydrologyZ = toHydrologyCoordinate(z);
         int regionX = Math.floorDiv(hydrologyX, settings.regionSize());
         int regionZ = Math.floorDiv(hydrologyZ, settings.regionSize());
-        return map(regionX, regionZ).lake(hydrologyX, hydrologyZ);
+        LakeHit local = map(regionX, regionZ).lake(hydrologyX, hydrologyZ);
+        if (!local.present() || !local.hasBasinKey()) {
+            return local;
+        }
+
+        Double cachedLevel = canonicalLakeLevels.get(local.basinKey());
+        if (cachedLevel != null) {
+            return local.withWaterSurfaceHeight(cachedLevel);
+        }
+
+        int anchorX = (int) (local.basinKey() >> 32);
+        int anchorZ = (int) local.basinKey();
+        int ownerRegionX = Math.floorDiv(anchorX, settings.regionSize());
+        int ownerRegionZ = Math.floorDiv(anchorZ, settings.regionSize());
+        LakeHit owner = map(ownerRegionX, ownerRegionZ).lake(anchorX, anchorZ);
+        double canonicalLevel = owner.present() && owner.basinKey() == local.basinKey()
+                ? owner.waterSurfaceHeight()
+                : local.waterSurfaceHeight();
+        Double retained = canonicalLakeLevels.putIfAbsent(local.basinKey(), canonicalLevel);
+        return local.withWaterSurfaceHeight(retained == null ? canonicalLevel : retained);
     }
 
     private int toHydrologyCoordinate(int worldCoordinate) {
