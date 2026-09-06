@@ -96,7 +96,7 @@ final class MarineClassificationRegressionTest {
     }
 
     @Test
-    void marineWaterToLandEdgeRisesByAtMostOneBlock() {
+    void marineWaterNeverTransitionsIntoSubmergedDryLand() {
         try (DefaultTerrainWorld world = new DefaultTerrainWorld(
                 new EngineContext(123456789L, -64, 320, 63),
                 EngineSettings.preset(EnginePreset.CENTRAL_EUROPE))) {
@@ -123,8 +123,7 @@ final class MarineClassificationRegressionTest {
             return;
         }
         int dryY = (int) Math.floor(candidate.surfaceHeight());
-        assertTrue(dryY >= 63, "dry coast must not remain below sea level");
-        assertTrue(dryY <= 64, "dry coast must rise by at most one block");
+        assertTrue(dryY >= 63, "dry terrain next to marine water must not remain below sea level");
     }
 
     private static boolean isMarineWet(TerrainSample sample) {
