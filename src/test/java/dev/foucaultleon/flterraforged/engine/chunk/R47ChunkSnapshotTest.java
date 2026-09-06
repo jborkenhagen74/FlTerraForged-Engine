@@ -24,7 +24,7 @@ class R47ChunkSnapshotTest {
     @Test
     void repeatedAndConcurrentRequestsShareOneImmutableSnapshot() throws Exception {
         EngineContext context = new EngineContext(918273645L, -64, 320, 63);
-        try (DefaultTerrainWorld world = new DefaultTerrainWorld(context, EngineSettings.balanced())) {
+        try (DefaultTerrainWorld world = new DefaultTerrainWorld(context, EngineSettings.defaults())) {
             ChunkSnapshot first = world.chunkSnapshot(3, -2);
             assertSame(first, world.chunkSnapshot(3, -2));
 
@@ -48,7 +48,7 @@ class R47ChunkSnapshotTest {
     @Test
     void snapshotOwnsFullVerticalNaturalGeometry() {
         EngineContext context = new EngineContext(123456789L, -64, 320, 63);
-        try (DefaultTerrainWorld world = new DefaultTerrainWorld(context, EngineSettings.balanced())) {
+        try (DefaultTerrainWorld world = new DefaultTerrainWorld(context, EngineSettings.defaults())) {
             ChunkSnapshot snapshot = world.chunkSnapshot(0, 0);
             assertEquals(-64, snapshot.minY());
             assertEquals(320, snapshot.maxYExclusive());
