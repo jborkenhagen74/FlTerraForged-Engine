@@ -20,8 +20,9 @@ import java.util.concurrent.ConcurrentMap;
  * X/Z samples. Cold misses use exact-key single-flight ownership.</p>
  *
  * <p>Tiles are 16x16 to match Minecraft chunks. Public bulk reads return a caller-owned array,
- * while the package-private snapshot bridge can consume the cached immutable array directly. This
- * avoids another 256-reference clone for every complete chunk snapshot.</p>
+ * while the package-private snapshot bridge can consume the cached immutable array directly. The
+ * freshly generated pipeline array is transferred into the tile without another clone, and only
+ * public callers pay for a defensive array copy.</p>
  */
 final class WorldSampleCache {
 
@@ -149,7 +150,7 @@ final class WorldSampleCache {
         TerrainSampleTile(int originX, int originZ, TerrainSample[] samples) {
             this.originX = originX;
             this.originZ = originZ;
-            this.samples = Objects.requireNonNull(samples, "samples").clone();
+            this.samples = Objects.requireNonNull(samples, "samples");
             if (this.samples.length != TILE_SIZE * TILE_SIZE) {
                 throw new IllegalArgumentException("Terrain sample tile has unexpected size");
             }
