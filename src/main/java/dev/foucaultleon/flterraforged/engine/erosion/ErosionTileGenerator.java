@@ -21,10 +21,11 @@ final class ErosionTileGenerator {
     }
 
     ErosionTile generate(int regionX, int regionZ) {
-        int coreX = regionX * settings.regionSize();
-        int coreZ = regionZ * settings.regionSize();
-        int originX = coreX - settings.border();
-        int originZ = coreZ - settings.border();
+        int halfCore = settings.regionSize() / 2;
+        int coreX = Math.subtractExact(Math.multiplyExact(regionX, settings.regionSize()), halfCore);
+        int coreZ = Math.subtractExact(Math.multiplyExact(regionZ, settings.regionSize()), halfCore);
+        int originX = Math.subtractExact(coreX, settings.border());
+        int originZ = Math.subtractExact(coreZ, settings.border());
         int width = settings.regionSize() + settings.border() * 2 + 1;
         double[] base = new double[width * width];
         Cell workspace = new Cell();
@@ -38,10 +39,7 @@ final class ErosionTileGenerator {
         double[] heights = base.clone();
         double[] erosion = new double[base.length];
         double[] deposition = new double[base.length];
-        ErosionFilter hydraulic = new HydraulicErosionFilter(
-                seed,
-                originX,
-                originZ);
+        ErosionFilter hydraulic = new HydraulicErosionFilter(seed, originX, originZ);
         hydraulic.apply(heights, erosion, deposition, width, settings, world.seaLevel());
         thermal.apply(heights, erosion, deposition, width, settings, world.seaLevel());
 
@@ -57,5 +55,4 @@ final class ErosionTileGenerator {
         }
         return new ErosionTile(originX, originZ, width, base, heights, erosion, deposition);
     }
-
 }
