@@ -14,7 +14,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 /**
- * World-scoped cache of immutable, chunk-aligned final terrain-sample tiles.
+ * World-scoped cache of immutable final terrain-sample tiles.
  *
  * <p>The cache sits above the complete world-generation pipeline, so biome lookup, density shaping,
  * height queries, hydrology guards and surface passes can reuse exactly the same final X/Z samples.
@@ -23,16 +23,17 @@ import java.util.concurrent.ConcurrentMap;
  * current worker while all other callers reuse that result. No additional task is submitted to a
  * world-generation executor and expensive pipeline work never runs while the LRU monitor is held.</p>
  *
- * <p>R45 retains enough completed tiles to cover normal spawn-region generation across Minecraft's
- * repeated biome, noise, surface and carver passes. The former 256-tile limit was smaller than the
- * initial spawn working set and therefore evicted samples while they were still being generated.
- * A thread-local ownership guard also turns an accidental recursive same-key request into an
+ * <p>R45 uses 8x8 tiles instead of 16x16 tiles. A sparse Minecraft height, biome or structure
+ * lookup therefore evaluates a 10x10 pipeline envelope rather than an 18x18 envelope, while dense
+ * chunk passes still reuse neighboring completed tiles. The maximum tile count is increased to
+ * 4096 so the total retained final-sample capacity remains 262144 X/Z samples, equal to 1024 16x16
+ * tiles. A thread-local ownership guard also turns an accidental recursive same-key request into an
  * immediate diagnostic failure instead of letting a worker join its own unfinished future.</p>
  */
 final class WorldSampleCache {
 
-    static final int TILE_SIZE = 16;
-    static final int DEFAULT_MAXIMUM_TILES = 1024;
+    static final int TILE_SIZE = 8;
+    static final int DEFAULT_MAXIMUM_TILES = 4096;
 
     private final WorldgenPipeline pipeline;
     private final TileCache cache;
