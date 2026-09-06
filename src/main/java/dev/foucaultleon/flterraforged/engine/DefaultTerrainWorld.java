@@ -59,6 +59,17 @@ public final class DefaultTerrainWorld implements TerrainWorld {
         return pipeline.placementSample(x, z);
     }
 
+    /**
+     * Returns one caller-owned copy of the chunk-aligned final terrain tile.
+     *
+     * <p>This is the canonical bridge used by the host biome stage and by complete snapshot
+     * generation. Both therefore share the exact same completed 16x16 Engine cache entry.</p>
+     */
+    @Override
+    public TerrainSample[] sampleChunk(int chunkX, int chunkZ) {
+        return sampleCache.sampleChunk(chunkX, chunkZ);
+    }
+
     /** {@inheritDoc} */
     @Override
     public ChunkSnapshot chunkSnapshot(int chunkX, int chunkZ) {
