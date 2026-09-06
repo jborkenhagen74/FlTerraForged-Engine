@@ -9,7 +9,7 @@ import dev.foucaultleon.flterraforged.engine.api.river.RiverSample;
 import dev.foucaultleon.flterraforged.engine.api.terrain.StandardTerrainTypes;
 import org.junit.jupiter.api.Test;
 
-/** Regression coverage for R49 narrow marine/coast semantics. */
+/** Regression coverage for the R52 physical marine/coast semantics. */
 final class MarineClassificationRegressionTest {
 
     @Test
@@ -27,7 +27,7 @@ final class MarineClassificationRegressionTest {
     }
 
     @Test
-    void lowInlandTerrainCannotBecomeCoastWithoutCoastalContinentalness() {
+    void lowInlandTerrainCannotBecomeCoastWithoutMarineShelfContinentalness() {
         TerrainClassifier classifier = classifier();
         assertEquals(
                 StandardTerrainTypes.PLAINS,
@@ -55,7 +55,7 @@ final class MarineClassificationRegressionTest {
     }
 
     @Test
-    void dryCoastExistsOnlyInsideNarrowContinentalnessBand() {
+    void dryCoastFollowsPhysicalShorelineAcrossMarineShelf() {
         TerrainClassifier classifier = classifier();
         assertEquals(
                 StandardTerrainTypes.COAST,
@@ -67,13 +67,22 @@ final class MarineClassificationRegressionTest {
                         -0.70D,
                         RiverSample.UNAVAILABLE));
         assertEquals(
+                StandardTerrainTypes.COAST,
+                classifier.classify(
+                        StandardTerrainTypes.PLAINS,
+                        63.5D,
+                        63,
+                        0.1D,
+                        0.07D,
+                        RiverSample.UNAVAILABLE));
+        assertEquals(
                 StandardTerrainTypes.PLAINS,
                 classifier.classify(
                         StandardTerrainTypes.PLAINS,
                         63.5D,
                         63,
                         0.1D,
-                        -0.60D,
+                        0.09D,
                         RiverSample.UNAVAILABLE));
     }
 
