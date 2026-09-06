@@ -5,9 +5,11 @@ import dev.foucaultleon.flterraforged.engine.api.river.RiverSample;
 import dev.foucaultleon.flterraforged.engine.cell.Cell;
 import dev.foucaultleon.flterraforged.engine.cell.CellLookup;
 import dev.foucaultleon.flterraforged.engine.internal.Maths;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
@@ -21,6 +23,12 @@ import java.util.concurrent.ConcurrentMap;
  * single-flight ownership: one caller generates the immutable map synchronously while duplicate
  * callers reuse the same result. Expensive generation never executes while the LRU monitor is held
  * and unrelated region keys remain fully independent.</p>
+ *
+ * <p>R45 assigns every X/Z column to exactly one canonical lake map. The padded map already contains
+ * enough drainage context to resolve basins at its edges; probing up to eight neighboring maps for
+ * every lake sample only multiplied cold-map construction and was the main spawn-time working-set
+ * explosion. Linear channels retain their narrow boundary probes because their owned segments may
+ * physically cross a region edge.</p>
  */
 public final class RiverModel implements CellLookup {
 
@@ -41,6 +49,7 @@ public final class RiverModel implements CellLookup {
     private final RivermapGenerator generator;
     private final MapCache cache;
     private final ConcurrentMap<Long, CompletableFuture<Rivermap>> inFlight = new ConcurrentHashMap<>();
+    private final ThreadLocal<Set<Long>> ownedMapKeys = ThreadLocal.withInitial(HashSet::new);
 
     /**
      * Creates a river model.
@@ -386,7 +395,8 @@ public final class RiverModel implements CellLookup {
      *
      * <p>Cold misses use exact-key single flight. The owner computes inline on its existing caller
      * thread. Waiters for the same region join only that owner's future; no world-generation task
-     * is submitted and unrelated regions do not serialize behind hash-stripe locks.</p>
+     * is submitted and unrelated regions do not serialize behind hash-stripe locks. R45 also
+     * detects recursive same-thread ownership before a worker can wait on its own future.</p>
      *
      * @param regionX river-region X index
      * @param regionZ river-region Z index
@@ -405,12 +415,22 @@ public final class RiverModel implements CellLookup {
     }
 
     private Rivermap loadSingleFlight(long key, int regionX, int regionZ) {
+        Set<Long> localOwnership = ownedMapKeys.get();
         CompletableFuture<Rivermap> owned = new CompletableFuture<>();
         CompletableFuture<Rivermap> existing = inFlight.putIfAbsent(key, owned);
         if (existing != null) {
+            if (localOwnership.contains(key)) {
+                throw new IllegalStateException(
+                        "Recursive river-map load detected for region " + regionX + ',' + regionZ);
+            }
             return await(existing);
         }
 
+        if (!localOwnership.add(key)) {
+            inFlight.remove(key, owned);
+            throw new IllegalStateException(
+                    "Recursive river-map ownership detected for region " + regionX + ',' + regionZ);
+        }
         try {
             Rivermap generated = generator.generate(regionX, regionZ);
             Rivermap retained;
@@ -429,6 +449,10 @@ public final class RiverModel implements CellLookup {
             owned.completeExceptionally(throwable);
             throw propagate(throwable);
         } finally {
+            localOwnership.remove(key);
+            if (localOwnership.isEmpty()) {
+                ownedMapKeys.remove();
+            }
             inFlight.remove(key, owned);
         }
     }
@@ -456,29 +480,16 @@ public final class RiverModel implements CellLookup {
         return inFlight.size();
     }
 
+    int cachedMaps() {
+        synchronized (cache) {
+            return cache.size();
+        }
+    }
+
     private LakeHit nearestLake(int x, int z) {
         int regionX = Math.floorDiv(x, settings.regionSize());
         int regionZ = Math.floorDiv(z, settings.regionSize());
-        LakeHit best = map(regionX, regionZ).lake(x, z);
-        int localX = Math.floorMod(x, settings.regionSize());
-        int localZ = Math.floorMod(z, settings.regionSize());
-        double boundaryRange = settings.gridSpacing() * (settings.paddingCells() - 1.0D);
-        int minDx = localX <= boundaryRange ? -1 : 0;
-        int maxDx = settings.regionSize() - localX <= boundaryRange ? 1 : 0;
-        int minDz = localZ <= boundaryRange ? -1 : 0;
-        int maxDz = settings.regionSize() - localZ <= boundaryRange ? 1 : 0;
-        for (int dz = minDz; dz <= maxDz; dz++) {
-            for (int dx = minDx; dx <= maxDx; dx++) {
-                if (dx == 0 && dz == 0) {
-                    continue;
-                }
-                LakeHit candidate = map(regionX + dx, regionZ + dz).lake(x, z);
-                if (candidate.influence() > best.influence()) {
-                    best = candidate;
-                }
-            }
-        }
-        return best;
+        return map(regionX, regionZ).lake(x, z);
     }
 
     private static final class MapCache extends LinkedHashMap<Long, Rivermap> {
