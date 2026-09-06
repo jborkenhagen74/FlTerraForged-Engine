@@ -8,6 +8,8 @@ import java.util.Objects;
 /** Immutable compact implementation of the Engine-owned natural chunk snapshot. */
 final class EngineChunkSnapshot implements ChunkSnapshot {
 
+    private static final NaturalMaterial[] MATERIALS = NaturalMaterial.values();
+
     private final int chunkX;
     private final int chunkZ;
     private final int minY;
@@ -69,7 +71,11 @@ final class EngineChunkSnapshot implements ChunkSnapshot {
             throw new IndexOutOfBoundsException("Y outside snapshot: " + y);
         }
         int index = (columnIndex(localX, localZ) * height()) + (y - minY);
-        return NaturalMaterial.values()[Byte.toUnsignedInt(materials[index])];
+        int ordinal = Byte.toUnsignedInt(materials[index]);
+        if (ordinal >= MATERIALS.length) {
+            throw new IllegalStateException("invalid natural material ordinal " + ordinal);
+        }
+        return MATERIALS[ordinal];
     }
 
     private static int columnIndex(int localX, int localZ) {
