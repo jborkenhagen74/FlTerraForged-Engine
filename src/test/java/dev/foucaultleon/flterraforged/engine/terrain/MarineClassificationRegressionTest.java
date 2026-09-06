@@ -17,8 +17,7 @@ final class MarineClassificationRegressionTest {
 
     @Test
     void oceanContinentalnessCannotTurnDryLandIntoOcean() {
-        TerrainClassifier classifier = new TerrainClassifier(
-                TerrainClassificationSettings.from(EngineSettings.preset(EnginePreset.CENTRAL_EUROPE)));
+        TerrainClassifier classifier = classifier();
         assertNotEquals(
                 StandardTerrainTypes.OCEAN,
                 classifier.classify(
@@ -32,8 +31,7 @@ final class MarineClassificationRegressionTest {
 
     @Test
     void lowInlandTerrainCannotBecomeCoastWithoutCoastalContinentalness() {
-        TerrainClassifier classifier = new TerrainClassifier(
-                TerrainClassificationSettings.from(EngineSettings.preset(EnginePreset.CENTRAL_EUROPE)));
+        TerrainClassifier classifier = classifier();
         assertEquals(
                 StandardTerrainTypes.PLAINS,
                 classifier.classify(
@@ -46,33 +44,54 @@ final class MarineClassificationRegressionTest {
     }
 
     @Test
-    void submergedOceanwardTerrainStillBecomesOcean() {
-        TerrainClassifier classifier = new TerrainClassifier(
-                TerrainClassificationSettings.from(EngineSettings.preset(EnginePreset.CENTRAL_EUROPE)));
+    void submergedOceanwardTerrainBecomesOceanNotBeachCoast() {
+        TerrainClassifier classifier = classifier();
         assertEquals(
                 StandardTerrainTypes.OCEAN,
                 classifier.classify(
                         StandardTerrainTypes.PLAINS,
-                        58.0D,
+                        62.0D,
                         63,
                         0.1D,
-                        -0.80D,
+                        -0.70D,
                         RiverSample.UNAVAILABLE));
     }
 
     @Test
-    void dryRiverIncisionCannotOverrideSubmergedCoast() {
-        TerrainClassifier classifier = new TerrainClassifier(
-                TerrainClassificationSettings.from(EngineSettings.preset(EnginePreset.CENTRAL_EUROPE)));
-        RiverSample dryRiverBank = new RiverSample(12.0D, 4.0D, 4.5D, Double.NaN, 5.0D);
+    void dryCoastExistsOnlyInsideNarrowContinentalnessBand() {
+        TerrainClassifier classifier = classifier();
         assertEquals(
                 StandardTerrainTypes.COAST,
+                classifier.classify(
+                        StandardTerrainTypes.PLAINS,
+                        63.5D,
+                        63,
+                        0.1D,
+                        -0.70D,
+                        RiverSample.UNAVAILABLE));
+        assertEquals(
+                StandardTerrainTypes.PLAINS,
+                classifier.classify(
+                        StandardTerrainTypes.PLAINS,
+                        63.5D,
+                        63,
+                        0.1D,
+                        -0.60D,
+                        RiverSample.UNAVAILABLE));
+    }
+
+    @Test
+    void dryRiverIncisionCannotTurnSubmergedShelfIntoBeach() {
+        TerrainClassifier classifier = classifier();
+        RiverSample dryRiverBank = new RiverSample(12.0D, 4.0D, 4.5D, Double.NaN, 5.0D);
+        assertEquals(
+                StandardTerrainTypes.OCEAN,
                 classifier.classify(
                         StandardTerrainTypes.PLAINS,
                         59.0D,
                         63,
                         0.2D,
-                        -0.56D,
+                        -0.70D,
                         dryRiverBank));
     }
 
@@ -92,6 +111,11 @@ final class MarineClassificationRegressionTest {
                 }
             }
         }
+    }
+
+    private static TerrainClassifier classifier() {
+        return new TerrainClassifier(
+                TerrainClassificationSettings.from(EngineSettings.preset(EnginePreset.CENTRAL_EUROPE)));
     }
 
     private static void assertMarineEdge(TerrainSample wet, TerrainSample candidate) {
