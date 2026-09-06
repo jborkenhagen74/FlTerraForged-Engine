@@ -36,9 +36,10 @@ import java.util.Objects;
 /**
  * Fully assembled, immutable world-generation pipeline for one world seed.
  *
- * <p>The class is the single composition root for all engine stages. It guarantees the ordering
- * {@code continent -> terrain -> erosion -> climate-runoff -> river -> climate} and prevents individual stages from
- * being accidentally wired against different continent or terrain sources.</p>
+ * <p>The exact path guarantees the ordering
+ * {@code continent -> terrain -> erosion -> climate-runoff -> river -> climate}. R49 additionally
+ * retains the pre-erosion terrain/climate branch as a dedicated placement sampler so host structure
+ * discovery cannot cold-start expensive local erosion or hydrology before visible chunk progress.</p>
  */
 public final class WorldgenPipeline implements CellLookup {
 
@@ -57,6 +58,7 @@ public final class WorldgenPipeline implements CellLookup {
     private final TerrainModel terrain;
     private final RiverModel river;
     private final ClimateModel climate;
+    private final ClimateModel placementClimate;
     private final TerrainClassifier classifier;
 
     /**
@@ -118,6 +120,7 @@ public final class WorldgenPipeline implements CellLookup {
                 moistureNoise,
                 climateRegions,
                 climateSettings);
+        this.placementClimate = drainageClimate;
 
         this.river = new RiverModel(
                 seed ^ RIVER_SEED,
@@ -185,13 +188,44 @@ public final class WorldgenPipeline implements CellLookup {
     }
 
     /**
+     * Produces a low-cost deterministic sample for coarse host placement decisions.
+     *
+     * <p>This path executes continent, base terrain and climate only. It deliberately does not touch
+     * erosion-region, river-map or lake caches. The semantic classifier still distinguishes broad
+     * ocean, narrow coast and land so structure biome discovery remains useful.</p>
+     *
+     * @param x world X coordinate
+     * @param z world Z coordinate
+     * @return placement-stage terrain sample
+     */
+    public TerrainSample placementSample(int x, int z) {
+        Cell cell = new Cell();
+        placementClimate.lookup(x, z, cell);
+        double continentalness = cell.continentEdge * 2.0D - 1.0D;
+        ClimateSample climateSample = new ClimateSample(cell.temperature, cell.moisture);
+        TerrainType type = classifier.classify(
+                cell.terrain,
+                cell.height,
+                context.seaLevel(),
+                0.0D,
+                continentalness,
+                RiverSample.UNAVAILABLE);
+        return new TerrainSample(
+                cell.height,
+                0.0D,
+                0.0D,
+                continentalness,
+                type,
+                climateSample,
+                RiverSample.UNAVAILABLE);
+    }
+
+    /**
      * Generates one square tile of final samples while sharing the one-block gradient border.
      *
      * <p>A normal point sample needs four additional post-river height lookups to derive its local
      * gradient. Bulk generation instead evaluates a single one-block border around the tile and
-     * reuses those completed cells for every interior gradient. For a 16x16 tile this reduces the
-     * hydrology-bearing lookups used by slope calculation from 1280 to 324 before cache reuse is
-     * considered.</p>
+     * reuses those completed cells for every interior gradient.</p>
      *
      * @param originX minimum world X coordinate of the tile
      * @param originZ minimum world Z coordinate of the tile
