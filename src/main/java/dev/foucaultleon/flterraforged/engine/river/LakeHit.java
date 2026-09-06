@@ -65,34 +65,59 @@ public record LakeHit(
         this(zone, influence, waterSurfaceHeight, minimumDepth, 0.0D, NO_BASIN_KEY);
     }
 
-    /** Returns whether this hit carries a stable cross-map basin anchor. */
+    /**
+     * Returns whether this hit carries a stable cross-map basin anchor.
+     *
+     * @return {@code true} when a stable basin key is available
+     */
     public boolean hasBasinKey() {
         return basinKey != NO_BASIN_KEY;
     }
 
-    /** Returns whether this sample belongs to a lake or pond zone. */
+    /**
+     * Returns whether this sample belongs to a lake or pond zone.
+     *
+     * @return {@code true} for any present lake or shoreline zone
+     */
     public boolean present() {
         return zone != LakeZone.NONE && Double.isFinite(waterSurfaceHeight);
     }
 
-    /** Returns whether this sample must materialize inland water. */
+    /**
+     * Returns whether this sample must materialize inland water.
+     *
+     * @return {@code true} for shallow or core lake water with positive depth
+     */
     public boolean materialWater() {
         return (zone == LakeZone.SHALLOW || zone == LakeZone.CORE)
                 && Double.isFinite(waterSurfaceHeight)
                 && minimumDepth > 0.0D;
     }
 
-    /** Returns whether this sample is the dry shoreline transition. */
+    /**
+     * Returns whether this sample is the dry shoreline transition.
+     *
+     * @return {@code true} for the shoreline transition zone
+     */
     public boolean shore() {
         return zone == LakeZone.SHORE;
     }
 
-    /** Returns whether this sample is in the stable inner basin. */
+    /**
+     * Returns whether this sample is in the stable inner basin.
+     *
+     * @return {@code true} for the lake core zone
+     */
     public boolean core() {
         return zone == LakeZone.CORE;
     }
 
-    /** Returns a copy using the reconciled canonical water level. */
+    /**
+     * Returns a copy using the reconciled canonical water level.
+     *
+     * @param waterSurfaceHeight reconciled canonical water-surface height
+     * @return copied lake hit retaining all other basin metadata
+     */
     public LakeHit withWaterSurfaceHeight(double waterSurfaceHeight) {
         return new LakeHit(zone, influence, waterSurfaceHeight, minimumDepth, shoreDistance, basinKey);
     }
