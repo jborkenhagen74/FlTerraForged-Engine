@@ -108,6 +108,7 @@ lake_field = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/river/
 cell = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/cell/Cell.java").read_text(encoding="utf-8")
 engine = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/DefaultTerrainEngine.java").read_text(encoding="utf-8")
 world_sample_cache = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/WorldSampleCache.java").read_text(encoding="utf-8")
+erosion_pipeline = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/erosion/ErosionPipeline.java").read_text(encoding="utf-8")
 bounded_cache_path = root / "src/main/java/dev/foucaultleon/flterraforged/engine/internal/BoundedConcurrentCache.java"
 for token, label in (
         ("startWaterHeight", "directed water-surface endpoints"),
@@ -220,35 +221,48 @@ else:
         if token not in resolved_test_text:
             errors.append(f"R44 resolved-hydrology regression test missing: {token}")
 
-# R45 worldgen-stall invariants. These deliberately verify the architecture rather than a timing
+# R46 worldgen cold-start invariants. These deliberately verify architecture rather than a timing
 # threshold so CI remains deterministic on shared runners.
-if 'VERSION = "0.1.0-SNAPSHOT-r45"' not in provider:
-    errors.append("Default engine provider must report r45")
+if 'VERSION = "0.1.0-SNAPSHOT-r46"' not in provider:
+    errors.append("Default engine provider must report r46")
 for token in ("MAXIMUM_LOCAL_RIVER_SEARCH = 96.0D", "IndexedSegment", "mayReach"):
     if token not in rivermap:
-        errors.append(f"R45 Rivermap missing bounded hot-path search: {token}")
-for token in ("TILE_SIZE = 8", "DEFAULT_MAXIMUM_TILES = 4096", "BoundedConcurrentCache", "ownedKeys"):
+        errors.append(f"R45 retained Rivermap hot-path invariant missing: {token}")
+for token in ("TILE_SIZE = 16", "DEFAULT_MAXIMUM_TILES = 1024", "BoundedConcurrentCache", "ownedKeys"):
     if token not in world_sample_cache:
-        errors.append(f"R45 final-sample cache invariant missing: {token}")
+        errors.append(f"R46 final-sample cache invariant missing: {token}")
 if "synchronized (cache)" in world_sample_cache:
-    errors.append("R45 final-sample cache hit path must not use a global synchronized cache monitor")
+    errors.append("R46 final-sample cache hit path must not use a global synchronized cache monitor")
 if not bounded_cache_path.is_file():
-    errors.append("R45 bounded concurrent cache implementation is missing")
+    errors.append("R46 bounded concurrent cache implementation is missing")
 else:
     bounded_cache = bounded_cache_path.read_text(encoding="utf-8")
     for token in ("ConcurrentHashMap", "ConcurrentLinkedQueue", "putIfAbsent", "entries.remove(eldest.key(), eldest)"):
         if token not in bounded_cache:
-            errors.append(f"R45 bounded concurrent cache invariant missing: {token}")
+            errors.append(f"R46 bounded concurrent cache invariant missing: {token}")
+for token in ("BoundedConcurrentCache", "ConcurrentMap", "inFlight", "ownedRegionKeys", "putIfAbsent"):
+    if token not in erosion_pipeline:
+        errors.append(f"R46 erosion exact-key single-flight invariant missing: {token}")
+for forbidden in ("LinkedHashMap", "generationLocks", "synchronized (cache)"):
+    if forbidden in erosion_pipeline:
+        errors.append(f"R46 erosion pipeline must not retain old lock-convoy mechanism: {forbidden}")
 for token in ("ownedMapKeys", "return map(regionX, regionZ).lake(x, z)"):
     if token not in river_model:
-        errors.append(f"R45 canonical hydrology ownership invariant missing: {token}")
+        errors.append(f"R45 retained canonical hydrology ownership invariant missing: {token}")
 r45_stall_test = root / "src/test/java/dev/foucaultleon/flterraforged/engine/river/R45WorldgenStallGuardTest.java"
 if not r45_stall_test.is_file():
-    errors.append("missing R45 cold-map fanout regression test")
+    errors.append("missing retained R45 cold-map fanout regression test")
 else:
     r45_test_text = r45_stall_test.read_text(encoding="utf-8")
     if "interiorTerrainLookupBuildsOnlyCanonicalHydrologyMap" not in r45_test_text:
-        errors.append("R45 cold-map fanout regression test is incomplete")
+        errors.append("retained R45 cold-map fanout regression test is incomplete")
+r46_erosion_test = root / "src/test/java/dev/foucaultleon/flterraforged/engine/erosion/R46ErosionConcurrencyTest.java"
+if not r46_erosion_test.is_file():
+    errors.append("missing R46 independent erosion-region concurrency regression test")
+else:
+    r46_test_text = r46_erosion_test.read_text(encoding="utf-8")
+    if "formerlyCollidingStripeKeysCanGenerateConcurrently" not in r46_test_text:
+        errors.append("R46 independent erosion-region concurrency regression test is incomplete")
 
 terrain_sampler = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/terrain/region/TerrainRegionSampler.java").read_text(encoding="utf-8")
 terrain_blender = (root / "src/main/java/dev/foucaultleon/flterraforged/engine/terrain/Blender.java").read_text(encoding="utf-8")
@@ -275,4 +289,4 @@ if errors:
     print("\n".join(errors), file=sys.stderr)
     raise SystemExit(1)
 
-print("Engine R45 layout verified: bounded parallel caches, canonical hydrology ownership, resolved hydrology")
+print("Engine R46 layout verified: exact-key erosion single-flight, chunk-aligned final cache, canonical hydrology")
