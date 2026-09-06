@@ -109,11 +109,12 @@ public record RiverSettings(
     /**
      * Derives hydrology settings from the public engine settings.
      *
-     * <p>The visible path is intentionally finer than the old bootstrap network. D8 remains the
-     * drainage skeleton, while the path sampler resolves each coarse edge against the local terrain
-     * before it is exposed as river geometry. Eight padding rings keep a wide deterministic context
-     * around the 20-cell owner region without forcing every cold map to build the 53x53 drainage
-     * grid used by the former 16-ring default.</p>
+     * <p>R48 deliberately uses a coarser drainage lattice and stronger accumulated-flow thresholds
+     * than the earlier bootstrap. A fine D8 lattice over broad low-relief terrain produced many
+     * nearly parallel visible channels and forced every cold hydrology map to refine far more edges
+     * than could contribute useful landscape structure. The coarser lattice keeps the deterministic
+     * watershed solve while making visible rivers represent catchments rather than every local fall
+     * line. Six padding rings still provide more than enough context for boundary continuity.</p>
      *
      * @param settings engine settings
      * @return derived river settings
@@ -121,28 +122,28 @@ public record RiverSettings(
     public static RiverSettings from(EngineSettings settings) {
         Objects.requireNonNull(settings, "settings");
         double density = Math.sqrt(settings.riverScale() / 0.00110D);
-        int spacing = clampMultiple((int) Math.round(22.0D / Math.max(0.25D, density)), 16, 36, 4);
+        int spacing = clampMultiple((int) Math.round(32.0D / Math.max(0.25D, density)), 24, 48, 4);
         int region = spacing * 20;
         double maximumWaterDepth = Math.max(2.25D, Math.min(4.75D, settings.riverDepth() * 0.62D));
         return new RiverSettings(
                 region,
                 spacing,
-                8,
-                5.5D,
-                3.5D,
+                6,
+                8.5D,
+                5.25D,
                 2.0D,
-                16.0D,
+                18.0D,
                 settings.riverDepth(),
-                1.35D,
+                1.45D,
                 1.05D,
                 1.35D,
                 maximumWaterDepth,
                 0.45D,
-                0.48D,
-                7,
+                0.55D,
+                5,
                 0.85D,
                 1.35D,
-                32);
+                24);
     }
 
     private static int clampMultiple(int value, int min, int max, int multiple) {
