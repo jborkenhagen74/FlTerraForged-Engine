@@ -58,7 +58,7 @@ public final class R52CoastOceanConsistencyTest {
             assertTrue(compared > 100, "Sampling window must contain enough low-coast neighbor pairs");
             assertTrue(
                     maximumLowCoastStep <= 3.25D,
-                    () -> "Non-cliff shoreline contains an artificial step of " + maximumLowCoastStep + " blocks");
+                    "Non-cliff shoreline contains an artificial step of " + maximumLowCoastStep + " blocks");
         }
     }
 
