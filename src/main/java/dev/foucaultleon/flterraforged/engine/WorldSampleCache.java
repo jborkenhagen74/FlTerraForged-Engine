@@ -15,22 +15,12 @@ import java.util.concurrent.ConcurrentMap;
 /**
  * World-scoped cache of immutable final terrain-sample tiles.
  *
- * <p>The cache sits above the complete world-generation pipeline, so biome lookup, density shaping,
- * height queries, hydrology guards and surface passes can reuse exactly the same final X/Z samples.
- * Completed tiles are stored in a bounded concurrent cache whose hit path does not acquire a global
- * monitor. Concurrent cold misses for the same tile are coalesced through a single-flight map: one
- * caller computes synchronously on its current worker while all other callers reuse that result. No
- * additional task is submitted to a world-generation executor.</p>
+ * <p>The cache sits above the complete world-generation pipeline, so biome lookup, height queries,
+ * hydrology guards, complete chunk snapshots and surface consumers can reuse exactly the same final
+ * X/Z samples. Cold misses use exact-key single-flight ownership.</p>
  *
- * <p>R46 restores 16x16 tiles after the R45 8x8 sparse-sampling experiment. Minecraft's dominant
- * generation path consumes complete 16x16 chunks: four 8x8 tiles each require their own two-block
- * pipeline halo and therefore evaluate 400 pipeline cells for one dense chunk, while one 16x16 tile
- * evaluates only an 18x18 envelope, or 324 cells. Structure-stage sparse sampling is reduced in the
- * Minecraft adapter instead of forcing the shared final-sample cache into a dense-path regression.
- * The bounded cache retains 1024 tiles, preserving the same 262144 final X/Z sample capacity.</p>
- *
- * <p>A thread-local ownership guard turns accidental recursive same-key requests into an immediate
- * diagnostic failure instead of letting a worker join its own unfinished future.</p>
+ * <p>Tiles are 16x16 to match Minecraft chunks. R49 exposes an aligned bulk read so complete chunk
+ * snapshot generation performs one cache lookup instead of 256 repeated point lookups.</p>
  */
 final class WorldSampleCache {
 
@@ -55,13 +45,12 @@ final class WorldSampleCache {
     TerrainSample sample(int x, int z) {
         int tileX = Math.floorDiv(x, TILE_SIZE);
         int tileZ = Math.floorDiv(z, TILE_SIZE);
-        long key = key(tileX, tileZ);
-
-        TerrainSampleTile tile = cache.get(key);
-        if (tile == null) {
-            tile = loadSingleFlight(key, tileX, tileZ);
-        }
+        TerrainSampleTile tile = tile(tileX, tileZ);
         return tile.sample(x, z);
+    }
+
+    TerrainSample[] sampleChunk(int chunkX, int chunkZ) {
+        return tile(chunkX, chunkZ).copySamples();
     }
 
     void clear() {
@@ -74,6 +63,12 @@ final class WorldSampleCache {
 
     int inFlightTiles() {
         return inFlight.size();
+    }
+
+    private TerrainSampleTile tile(int tileX, int tileZ) {
+        long key = key(tileX, tileZ);
+        TerrainSampleTile tile = cache.get(key);
+        return tile == null ? loadSingleFlight(key, tileX, tileZ) : tile;
     }
 
     private TerrainSampleTile loadSingleFlight(long key, int tileX, int tileZ) {
@@ -165,6 +160,10 @@ final class WorldSampleCache {
                 throw new IllegalArgumentException("Coordinate lies outside terrain sample tile");
             }
             return samples[localZ * TILE_SIZE + localX];
+        }
+
+        TerrainSample[] copySamples() {
+            return samples.clone();
         }
     }
 }
