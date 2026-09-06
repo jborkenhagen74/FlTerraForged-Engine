@@ -42,27 +42,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
           mapfile -t jars < <(
             find build/libs -maxdepth 1 -type f -name '*.jar' \
-              ! -name '*-sources.jar' \
-              ! -name '*-javadoc.jar' \
-              -print | sort
+              ! -name '*-sources.jar' ! -name '*-javadoc.jar' -print | sort
           )
-
           if [ "${#jars[@]}" -ne 1 ]; then
             echo "::error::Expected exactly one Engine runtime JAR in build/libs, found ${#jars[@]}."
-            if [ "${#jars[@]}" -gt 0 ]; then
-              printf 'Candidate: %s\n' "${jars[@]}"
-            fi
             exit 1
           fi
-
           mkdir -p build/artifacts
           short_sha="${GITHUB_SHA:0:7}"
-          artifact_path="build/artifacts/FlTerraForged-Engine-R49-${short_sha}.jar"
+          artifact_path="build/artifacts/FlTerraForged-Engine-R50-${short_sha}.jar"
           cp "${jars[0]}" "$artifact_path"
-
           echo "artifact_path=$artifact_path" >> "$GITHUB_OUTPUT"
           echo "jar_name=$(basename "$artifact_path")" >> "$GITHUB_OUTPUT"
 
@@ -83,12 +74,12 @@ jobs:
           JAR_NAME: ${{ steps.collect_engine.outputs.jar_name }}
         run: |
           {
-            echo "### FlTerraForged Engine R49 artifact"
+            echo "### FlTerraForged Engine R50 artifact"
             echo
             echo "- JAR: \`$JAR_NAME\`"
-            echo "- Coast: narrow dry shoreline semantics; submerged shelf remains ocean"
-            echo "- Cold start: placement sampler, centered 64x64 erosion ownership, chunk bulk samples"
-            echo "- Subsurface: upper guaranteed-air volume skipped; material enum lookup allocation removed"
+            echo "- Lakes: stable basin anchors reconcile cross-map water levels"
+            echo "- Terrain: chunk-aligned bulk sample shared with host biome generation"
+            echo "- Performance: R49 centered erosion, bulk terrain and subsurface fast paths retained"
             echo "- SHA-256: \`$ARTIFACT_DIGEST\`"
             echo "- [Download artifact]($ARTIFACT_URL)"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -98,7 +89,7 @@ jobs:
     if: >-
       github.event_name == 'push' &&
       (github.ref == 'refs/heads/develop' ||
-       github.ref == 'refs/heads/release/r49-cold-start-coast-fix')
+       github.ref == 'refs/heads/release/r50-lake-biome-performance')
     needs: check
     runs-on: ubuntu-latest
     permissions:
@@ -129,4 +120,4 @@ jobs:
           publish_dir: ./build/maven-repository
           keep_files: true
           force_orphan: false
-          commit_message: "Publish Engine R49 ${{ github.sha }}"
+          commit_message: "Publish Engine R50 ${{ github.sha }}"
