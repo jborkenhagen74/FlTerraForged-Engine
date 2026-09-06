@@ -146,8 +146,11 @@ river_generator = require(
 river_model = require(
     JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/river/RiverModel.java",
     ("riverWaterSurfaceHeight", "riverFlow", "minimumWaterDepth", "nearestLake", "drainageClimate",
-     "ownedMapKeys", "return map(regionX, regionZ).lake(x, z)"),
+     "ownedMapKeys", "centeredGeneratorLookup", "toHydrologyCoordinate", "int hydrologyX",
+     "return map(regionX, regionZ).lake(hydrologyX, hydrologyZ)"),
     "river model")
+if "Math.floorDiv(x, settings.regionSize())" in river_model:
+    ERRORS.append("R47 river ownership must not use the old world-origin boundary lattice")
 rivermap = require(
     JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/river/Rivermap.java",
     ("MAXIMUM_LOCAL_RIVER_SEARCH = 96.0D", "IndexedSegment", "mayReach"),
@@ -197,11 +200,16 @@ require(
     "retained R46 erosion concurrency regression test")
 require(
     TEST_ROOT / "dev/foucaultleon/flterraforged/engine/river/R45WorldgenStallGuardTest.java",
-    ("interiorTerrainLookupBuildsOnlyCanonicalHydrologyMap",),
+    ("interiorTerrainLookupBuildsOnlyCanonicalHydrologyMap", "model.sample(120, 120)"),
     "retained R45 hydrology fanout regression test")
+require(
+    TEST_ROOT / "dev/foucaultleon/flterraforged/engine/river/R47SpawnHydrologyFanoutTest.java",
+    ("spawnOriginBuildsOnlyOneCanonicalHydrologyMap", "model.sample(0, 0)",
+     "model.cachedMaps()", "model.inFlightMaps()"),
+    "R47 spawn hydrology fanout regression test")
 
 if ERRORS:
     print("\n".join(ERRORS), file=sys.stderr)
     raise SystemExit(1)
 
-print("Engine R47 layout verified: immutable engine-owned chunks, exact-key single-flight caches, retained hydrology and erosion guards")
+print("Engine R47 layout verified: immutable engine-owned chunks, centered spawn hydrology, exact-key single-flight caches and retained erosion guards")
