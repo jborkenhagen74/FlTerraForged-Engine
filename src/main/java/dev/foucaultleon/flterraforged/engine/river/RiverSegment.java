@@ -75,10 +75,12 @@ public record RiverSegment(
     /**
      * Samples the segment at the closest projected point on the refined path.
      *
-     * <p>The channel has a gently flattened wet core before it rises toward the banks. R48 also
-     * smooths only interior water-profile samples before interpolation. Coarse drainage-node
-     * endpoints remain exact, preserving confluence continuity, while local containment probes can
-     * no longer create a sequence of unnecessarily abrupt one-block water shelves.</p>
+     * <p>The channel has a gently flattened wet core before it rises toward the banks. R48 smooths
+     * interior water-profile samples during ordinary projection while preserving an exact result at
+     * every hydraulic control point. The latter keeps drainage-node/confluence invariants exact and
+     * also means diagnostics can still query a refined path point without observing a transformed
+     * level. Normal integer terrain columns between those control points receive the smoothed profile
+     * and therefore avoid a sequence of unnecessary one-block water shelves.</p>
      *
      * @param x world X coordinate
      * @param z world Z coordinate
@@ -95,10 +97,7 @@ public record RiverSegment(
         RiverPathPoint pathEnd = path.get(projection.segmentIndex() + 1);
         double surfaceHeight = Maths.lerp(
                 pathStart.terrainHeight(), pathEnd.terrainHeight(), projection.localAlpha());
-        double waterSurfaceHeight = Maths.lerp(
-                smoothedWaterSurface(projection.segmentIndex()),
-                smoothedWaterSurface(projection.segmentIndex() + 1),
-                projection.localAlpha());
+        double waterSurfaceHeight = projectedWaterSurface(projection, pathStart, pathEnd);
         return new RiverHit(
                 projection.distance(),
                 width,
@@ -107,6 +106,22 @@ public record RiverSegment(
                 waterSurfaceHeight,
                 flow,
                 false);
+    }
+
+    private double projectedWaterSurface(
+            Projection projection,
+            RiverPathPoint pathStart,
+            RiverPathPoint pathEnd) {
+        if (projection.localAlpha() <= 1.0E-12D) {
+            return pathStart.waterSurfaceHeight();
+        }
+        if (projection.localAlpha() >= 1.0D - 1.0E-12D) {
+            return pathEnd.waterSurfaceHeight();
+        }
+        return Maths.lerp(
+                smoothedWaterSurface(projection.segmentIndex()),
+                smoothedWaterSurface(projection.segmentIndex() + 1),
+                projection.localAlpha());
     }
 
     private double smoothedWaterSurface(int index) {
