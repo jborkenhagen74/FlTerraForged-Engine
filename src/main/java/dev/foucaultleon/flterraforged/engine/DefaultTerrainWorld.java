@@ -26,7 +26,7 @@ public final class DefaultTerrainWorld implements TerrainWorld {
         this.context = Objects.requireNonNull(context, "context");
         this.pipeline = new WorldgenPipeline(context, Objects.requireNonNull(settings, "settings"));
         this.sampleCache = new WorldSampleCache(pipeline);
-        this.chunkCache = new ChunkSnapshotCache(context, sampleCache);
+        this.chunkCache = new ChunkSnapshotCache(context, sampleCache::sample);
     }
 
     /** {@inheritDoc} */
