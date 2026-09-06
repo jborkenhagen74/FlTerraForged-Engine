@@ -7,7 +7,7 @@ import java.util.Objects;
  * Immutable parameters for deterministic terrain erosion.
  *
  * <p>The default model uses a padded region, globally aligned droplet launch points and a final
- * thermal-relaxation pass. Only immutable completed regions are cached per sampling thread.</p>
+ * thermal-relaxation pass.</p>
  *
  * @param regionSize width and depth of the erosion core region in blocks
  * @param border padding around each region in blocks
@@ -71,8 +71,8 @@ public record ErosionSettings(
      * @param cacheSize maximum number of immutable erosion regions retained by the world sampler
      */
     public ErosionSettings {
-        if (regionSize < 8) {
-            throw new IllegalArgumentException("regionSize must be >= 8");
+        if (regionSize < 8 || (regionSize & 1) != 0) {
+            throw new IllegalArgumentException("regionSize must be even and >= 8");
         }
         if (border < maxDropletLifetime + erosionRadius) {
             throw new IllegalArgumentException("border must cover maxDropletLifetime + erosionRadius");
@@ -97,13 +97,17 @@ public record ErosionSettings(
     /**
      * Creates the default hydraulic/thermal erosion settings from the public engine settings.
      *
+     * <p>R49 doubles the useful core to 64x64 while keeping the required 16-block simulation
+     * border. The larger core amortizes border work and, together with centered ownership, lets the
+     * first spawn chunk and its one-block gradient halo reuse one cold erosion region.</p>
+     *
      * @param settings parsed engine settings
      * @return erosion settings
      */
     public static ErosionSettings from(EngineSettings settings) {
         Objects.requireNonNull(settings, "settings");
         return new ErosionSettings(
-                32,
+                64,
                 16,
                 6,
                 12,
@@ -120,7 +124,7 @@ public record ErosionSettings(
                 settings.thermalErosionStrength(),
                 1.35D,
                 settings.erosionMaxDelta(),
-                64);
+                48);
     }
 
     private static void unit(double value, String name) {
