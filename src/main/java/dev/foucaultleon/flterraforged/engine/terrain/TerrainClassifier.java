@@ -118,6 +118,7 @@ public final class TerrainClassifier {
         // Minecraft beach band itself. Explicit inland hydrology remains handled by its own signals.
         if ((deepEnough && oceanward)
                 || (continentalness < settings.oceanContinentalness() && belowSea)
+                || (submerged && oceanward)
                 || submergedShelf) {
             return StandardTerrainTypes.OCEAN;
         }
