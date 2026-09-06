@@ -9,17 +9,45 @@ package dev.foucaultleon.flterraforged.engine.river;
  * @param minimumDepth desired minimum local water depth in blocks
  * @param shoreDistance signed approximate horizontal distance from the shoreline in blocks;
  *        positive values point into the water body and negative values point onto land
+ * @param basinKey stable hydrology-grid anchor key for cross-map water-level reconciliation
  */
 public record LakeHit(
         LakeZone zone,
         double influence,
         double waterSurfaceHeight,
         double minimumDepth,
-        double shoreDistance) {
+        double shoreDistance,
+        long basinKey) {
+
+    /** Marker used when no stable basin anchor is available. */
+    public static final long NO_BASIN_KEY = Long.MIN_VALUE;
 
     /** Marker used outside inland-water basins. */
     public static final LakeHit NONE = new LakeHit(
-            LakeZone.NONE, 0.0D, Double.NaN, 0.0D, Double.NEGATIVE_INFINITY);
+            LakeZone.NONE,
+            0.0D,
+            Double.NaN,
+            0.0D,
+            Double.NEGATIVE_INFINITY,
+            NO_BASIN_KEY);
+
+    /**
+     * Creates the legacy five-value lake hit without a stable basin anchor.
+     *
+     * @param zone semantic basin zone
+     * @param influence normalized inland-water influence
+     * @param waterSurfaceHeight constant basin water surface
+     * @param minimumDepth desired minimum local depth
+     * @param shoreDistance signed shoreline distance
+     */
+    public LakeHit(
+            LakeZone zone,
+            double influence,
+            double waterSurfaceHeight,
+            double minimumDepth,
+            double shoreDistance) {
+        this(zone, influence, waterSurfaceHeight, minimumDepth, shoreDistance, NO_BASIN_KEY);
+    }
 
     /**
      * Creates the legacy four-value lake hit without an explicit shoreline distance.
@@ -34,44 +62,38 @@ public record LakeHit(
             double influence,
             double waterSurfaceHeight,
             double minimumDepth) {
-        this(zone, influence, waterSurfaceHeight, minimumDepth, 0.0D);
+        this(zone, influence, waterSurfaceHeight, minimumDepth, 0.0D, NO_BASIN_KEY);
     }
 
-    /**
-     * Returns whether this sample belongs to a lake or pond zone.
-     *
-     * @return {@code true} for shore, shallow and core basin samples
-     */
+    /** Returns whether this hit carries a stable cross-map basin anchor. */
+    public boolean hasBasinKey() {
+        return basinKey != NO_BASIN_KEY;
+    }
+
+    /** Returns whether this sample belongs to a lake or pond zone. */
     public boolean present() {
         return zone != LakeZone.NONE && Double.isFinite(waterSurfaceHeight);
     }
 
-    /**
-     * Returns whether this sample must materialize inland water.
-     *
-     * @return {@code true} for shallow and core water zones
-     */
+    /** Returns whether this sample must materialize inland water. */
     public boolean materialWater() {
         return (zone == LakeZone.SHALLOW || zone == LakeZone.CORE)
                 && Double.isFinite(waterSurfaceHeight)
                 && minimumDepth > 0.0D;
     }
 
-    /**
-     * Returns whether this sample is the dry shoreline transition.
-     *
-     * @return {@code true} in the lake/pond shore zone
-     */
+    /** Returns whether this sample is the dry shoreline transition. */
     public boolean shore() {
         return zone == LakeZone.SHORE;
     }
 
-    /**
-     * Returns whether this sample is in the stable inner basin.
-     *
-     * @return {@code true} in the lake/pond core
-     */
+    /** Returns whether this sample is in the stable inner basin. */
     public boolean core() {
         return zone == LakeZone.CORE;
+    }
+
+    /** Returns a copy using the reconciled canonical water level. */
+    public LakeHit withWaterSurfaceHeight(double waterSurfaceHeight) {
+        return new LakeHit(zone, influence, waterSurfaceHeight, minimumDepth, shoreDistance, basinKey);
     }
 }
