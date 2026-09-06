@@ -38,11 +38,11 @@ import java.util.Objects;
  * Fully assembled, immutable world-generation pipeline for one world seed.
  *
  * <p>The exact path guarantees the ordering
- * {@code continent -> terrain -> erosion -> climate-runoff -> river -> climate}. R49 additionally
- * retains the pre-erosion terrain/climate branch as a dedicated placement sampler so host structure
- * discovery cannot cold-start expensive local erosion or hydrology before visible chunk progress.
- * R51 makes sea level a hard hydrology invariant: coastal dry land is lifted through a narrow apron
- * and river mouths converge to the canonical world sea level before immutable samples are exposed.</p>
+ * {@code continent -> terrain -> erosion -> climate-runoff -> river -> climate}. The inexpensive
+ * placement path deliberately ends before erosion and hydrology. R52 removes the former post-hoc
+ * dry-coast lift so terrain, structures and water all consume the same physical surface. Only the
+ * low river-mouth profile is adjusted, and that adjustment is blended continuously into the global
+ * sea level instead of creating a hard water or bed step.</p>
  */
 public final class WorldgenPipeline implements CellLookup {
 
@@ -57,8 +57,8 @@ public final class WorldgenPipeline implements CellLookup {
     private static final long RIVER_SEED = 0x85EBCA77C2B2AE63L;
     private static final long CLIMATE_REGION_SEED = 0xC6BC279692B5C323L;
 
-    private static final double MARINE_APRON_CONTINENTALNESS = 0.38D;
-    private static final double RIVER_MOUTH_CONTINENTALNESS = 0.46D;
+    private static final double RIVER_MOUTH_SEAWARD = -0.30D;
+    private static final double RIVER_MOUTH_LANDWARD = -0.08D;
     private static final double MAXIMUM_MOUTH_WATER_OFFSET = 6.0D;
     private static final double MAXIMUM_MOUTH_DEPTH = 3.5D;
     private static final double MINIMUM_MOUTH_DEPTH = 1.25D;
@@ -68,7 +68,6 @@ public final class WorldgenPipeline implements CellLookup {
     private final RiverModel river;
     private final ClimateModel climate;
     private final ClimateModel placementClimate;
-    private final TerrainClassificationSettings classificationSettings;
     private final TerrainClassifier classifier;
 
     /**
@@ -147,8 +146,7 @@ public final class WorldgenPipeline implements CellLookup {
                 moistureNoise,
                 climateRegions,
                 climateSettings);
-        this.classificationSettings = TerrainClassificationSettings.from(settings);
-        this.classifier = new TerrainClassifier(classificationSettings);
+        this.classifier = new TerrainClassifier(TerrainClassificationSettings.from(settings));
     }
 
     /** {@inheritDoc} */
@@ -203,8 +201,8 @@ public final class WorldgenPipeline implements CellLookup {
      * Produces a low-cost deterministic sample for coarse host placement decisions.
      *
      * <p>This path executes continent, base terrain and climate only. It deliberately does not touch
-     * erosion-region, river-map or lake caches. The semantic classifier still distinguishes broad
-     * ocean, narrow coast and land so structure biome discovery remains useful.</p>
+     * erosion-region, river-map or lake caches. Semantic classification still distinguishes broad
+     * ocean, coast and land so structure discovery remains useful.</p>
      *
      * @param x world X coordinate
      * @param z world Z coordinate
@@ -294,43 +292,34 @@ public final class WorldgenPipeline implements CellLookup {
     }
 
     private void stabilizeWaterLevels(Cell cell) {
-        double continentalness = cell.continentEdge * 2.0D - 1.0D;
-        double coast = classificationSettings.coastContinentalness();
+        if (cell.lake || !Double.isFinite(cell.riverWaterSurfaceHeight)) {
+            return;
+        }
         double seaLevel = context.seaLevel();
-        boolean riverWater = Double.isFinite(cell.riverWaterSurfaceHeight);
-
-        // River profiles remain free inland, but once a low river reaches the marine transition its
-        // waterline is canonicalized to the same sea level used by the ocean materializer. This
-        // prevents a several-block water shelf at the final river segment.
-        if (riverWater
-                && !cell.lake
-                && continentalness <= coast + RIVER_MOUTH_CONTINENTALNESS
-                && cell.riverWaterSurfaceHeight <= seaLevel + MAXIMUM_MOUTH_WATER_OFFSET) {
-            double desiredDepth = Maths.clamp(
-                    Math.max(cell.riverDepth, MINIMUM_MOUTH_DEPTH),
-                    MINIMUM_MOUTH_DEPTH,
-                    MAXIMUM_MOUTH_DEPTH);
-            cell.riverWaterSurfaceHeight = seaLevel;
-            cell.height = Math.min(cell.height, seaLevel - desiredDepth);
-            cell.riverDepth = Math.max(0.0D, seaLevel - cell.height);
+        if (cell.riverWaterSurfaceHeight > seaLevel + MAXIMUM_MOUTH_WATER_OFFSET) {
+            return;
+        }
+        double continentalness = cell.continentEdge * 2.0D - 1.0D;
+        if (continentalness > RIVER_MOUTH_LANDWARD) {
+            return;
         }
 
-        // The dry side of a shoreline may not remain several blocks below the adjacent global ocean
-        // surface. Lift only a narrow continentalness apron; the dry COAST semantic itself stays
-        // narrow and the change therefore removes vertical water walls without reintroducing huge
-        // beach biomes.
-        if (!cell.lake
-                && !Double.isFinite(cell.riverWaterSurfaceHeight)
-                && continentalness >= coast
-                && continentalness <= coast + MARINE_APRON_CONTINENTALNESS
-                && cell.height < seaLevel + 0.05D) {
-            double alpha = Maths.smooth(Maths.clamp(
-                    (continentalness - coast) / MARINE_APRON_CONTINENTALNESS,
-                    0.0D,
-                    1.0D));
-            double minimumDryHeight = seaLevel + 0.10D + alpha * 1.65D;
-            cell.height = Math.max(cell.height, minimumDryHeight);
-        }
+        double alpha = Maths.smooth(Maths.clamp(
+                (RIVER_MOUTH_LANDWARD - continentalness)
+                        / (RIVER_MOUTH_LANDWARD - RIVER_MOUTH_SEAWARD),
+                0.0D,
+                1.0D));
+        double originalWater = cell.riverWaterSurfaceHeight;
+        double targetWater = Maths.lerp(originalWater, seaLevel, alpha);
+        double desiredDepth = Maths.clamp(
+                Math.max(cell.riverDepth, MINIMUM_MOUTH_DEPTH),
+                MINIMUM_MOUTH_DEPTH,
+                MAXIMUM_MOUTH_DEPTH);
+        double targetBed = targetWater - desiredDepth;
+
+        cell.riverWaterSurfaceHeight = targetWater;
+        cell.height = Maths.lerp(cell.height, targetBed, alpha);
+        cell.riverDepth = Math.max(0.0D, targetWater - cell.height);
     }
 
     private TerrainSample toTerrainSample(Cell center) {
