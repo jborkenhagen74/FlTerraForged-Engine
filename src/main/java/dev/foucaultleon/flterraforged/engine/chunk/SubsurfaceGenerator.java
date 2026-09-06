@@ -21,7 +21,7 @@ final class SubsurfaceGenerator {
     private static final long FLOOR_SALT = 0x45EA92D7138CB6F0L;
     private static final long LAVA_SALT = 0x7F21C54DA893B60EL;
     private static final double MIN_WET_DEPTH = 0.05D;
-    private static final double MOUTH_CLAMP_HEIGHT = 6.0D;
+    private static final double WATER_QUANTIZATION_EPSILON = 1.0E-6D;
     private static final int DRY_SURFACE_SEAL_DEPTH = 7;
     private static final int INLAND_WATER_SEAL_DEPTH = 12;
     private static final int OCEAN_SEAL_DEPTH = 18;
@@ -63,26 +63,7 @@ final class SubsurfaceGenerator {
                 (int) Math.floor(sample.surfaceHeight()),
                 context.minY() + 1,
                 context.maxYExclusive() - 2);
-        int solidTop = surfaceY + 1;
-        int waterTop = solidTop;
-        boolean ocean = StandardTerrainTypes.OCEAN.equals(sample.terrainType());
-        if (ocean) {
-            waterTop = Math.max(waterTop, context.seaLevel() + 1);
-        }
-        RiverSample hydrology = sample.river();
-        if (hydrology.hasWaterSurfaceHeight()
-                && hydrology.depth() > MIN_WET_DEPTH
-                && hydrology.waterSurfaceHeight() > sample.surfaceHeight()) {
-            double waterSurface = hydrology.waterSurfaceHeight();
-            if (ocean
-                    || (surfaceY <= context.seaLevel() + 2
-                            && waterSurface <= context.seaLevel() + MOUTH_CLAMP_HEIGHT)) {
-                waterSurface = Math.min(waterSurface, context.seaLevel());
-            }
-            int hydrologyWaterTop = (int) Math.floor(waterSurface) + 1;
-            waterTop = Math.max(waterTop, hydrologyWaterTop);
-        }
-        waterTop = clamp(waterTop, solidTop, context.maxYExclusive());
+        int waterTop = resolveSurfaceWaterTop(sample, surfaceY);
 
         int soilDepth = 3 + (int) Math.floor(unitHash(x >> 4, 0, z >> 4, SOIL_SALT) * 3.0D);
         int groundwaterBase = context.seaLevel() - 7;
@@ -97,6 +78,29 @@ final class SubsurfaceGenerator {
                 waterTop,
                 soilDepth,
                 groundwaterY);
+    }
+
+    private int resolveSurfaceWaterTop(TerrainSample sample, int surfaceY) {
+        int solidTop = surfaceY + 1;
+        if (StandardTerrainTypes.OCEAN.equals(sample.terrainType())) {
+            return clamp(
+                    Math.max(solidTop, context.seaLevel() + 1),
+                    solidTop,
+                    context.maxYExclusive());
+        }
+
+        RiverSample hydrology = sample.river();
+        if (!hydrology.hasWaterSurfaceHeight() || hydrology.depth() <= MIN_WET_DEPTH) {
+            return solidTop;
+        }
+
+        int hydrologyTop = (int) Math.floor(
+                hydrology.waterSurfaceHeight() + WATER_QUANTIZATION_EPSILON) + 1;
+        // Hydrology has already made the wet/dry decision and stabilized river mouths before the
+        // final TerrainSample is published. Preserve that decision verbatim here instead of
+        // re-clamping it to sea level or comparing two independently rounded surface values.
+        hydrologyTop = Math.max(hydrologyTop, solidTop + 1);
+        return clamp(hydrologyTop, solidTop + 1, context.maxYExclusive());
     }
 
     private void fillColumn(
