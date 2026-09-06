@@ -35,7 +35,9 @@ public final class DefaultTerrainWorld implements TerrainWorld {
 
             @Override
             public TerrainSample[] sampleChunk(int chunkX, int chunkZ) {
-                return sampleCache.sampleChunk(chunkX, chunkZ);
+                // ChunkSnapshotCache only reads the immutable TerrainSample references. Reusing the
+                // cache-owned array here avoids one redundant 256-reference clone per chunk.
+                return sampleCache.sampleChunkShared(chunkX, chunkZ);
             }
         };
         this.chunkCache = new ChunkSnapshotCache(context, sampler);
