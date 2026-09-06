@@ -8,6 +8,8 @@ import java.util.Objects;
 /** Applies final semantic overrides to an engine-selected base terrain landform. */
 public final class TerrainClassifier {
 
+    private static final double SUBMERGED_SHELF_CONTINENTALNESS_EXTENSION = 0.10D;
+
     /**
      * Canonical dry shoreline semantic.
      *
@@ -106,13 +108,17 @@ public final class TerrainClassifier {
         boolean submerged = height < seaLevel - 0.05D;
         boolean belowSea = height < seaLevel - 1.50D;
         boolean oceanward = continentalness < settings.coastContinentalness();
+        boolean submergedShelf = submerged
+                && continentalness
+                        < settings.coastContinentalness() + SUBMERGED_SHELF_CONTINENTALNESS_EXTENSION;
         boolean deepEnough = height < seaLevel - settings.oceanDepthBelowSea();
 
-        // R49 treats all submerged oceanward shelf terrain as ocean. COAST is reserved for the
-        // narrow dry shoreline strip that Minecraft can legitimately map to beach biomes.
+        // The submerged shelf may extend slightly farther landward than the dry coast semantic.
+        // That prevents below-sea dry columns directly behind the shoreline without widening the
+        // Minecraft beach band itself. Explicit inland hydrology remains handled by its own signals.
         if ((deepEnough && oceanward)
                 || (continentalness < settings.oceanContinentalness() && belowSea)
-                || (submerged && oceanward)) {
+                || submergedShelf) {
             return StandardTerrainTypes.OCEAN;
         }
         if (lake && river.hasWaterSurfaceHeight()) {
