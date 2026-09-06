@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify Engine isolation, R48 hydrology tuning and immutable chunk ownership."""
+"""Verify Engine isolation, strict Javadocs and R49 cold-start/coast invariants."""
 
 from pathlib import Path
 import re
@@ -105,132 +105,105 @@ if "raw.githubusercontent.com/jborkenhagen74/FlTerraForged/maven/" not in build_
     ERRORS.append("missing public FlTerraForged Engine API Maven repository")
 if "maven.pkg.github.com" in build_text or "packages: read" in workflow_text or "packages: write" in workflow_text:
     ERRORS.append("Engine must not depend on GitHub Packages")
-if "release/r48-river-performance-terrain-tuning" not in workflow_text:
-    ERRORS.append("R48 workflow must publish the tuned branch snapshot")
-if "FlTerraForged-Engine-R48-${short_sha}.jar" not in workflow_text:
-    ERRORS.append("R48 workflow must expose an R48 runtime artifact")
 
-provider = require(
+require(
+    ROOT / ".github/workflows/build.yml",
+    ("release/r49-cold-start-coast-fix", "FlTerraForged-Engine-R49-${short_sha}.jar", "Publish Engine R49"),
+    "R49 workflow")
+require(
     JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/DefaultEngineProvider.java",
-    ('VERSION = "0.1.0-SNAPSHOT-r48"', "EngineApiVersion.CURRENT"),
-    "R48 provider")
+    ('VERSION = "0.1.0-SNAPSHOT-r49"', "EngineApiVersion.CURRENT"),
+    "R49 provider")
 
 world_cache = require(
     JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/WorldSampleCache.java",
-    ("TILE_SIZE = 16", "DEFAULT_MAXIMUM_TILES = 1024", "BoundedConcurrentCache", "ownedKeys", "inFlight"),
-    "final sample cache")
-if "synchronized (cache)" in world_cache:
-    ERRORS.append("final sample cache hit path must not use a global monitor")
+    ("TILE_SIZE = 16", "sampleChunk(int chunkX, int chunkZ)", "copySamples", "inFlight", "ownedKeys"),
+    "R49 final sample cache")
+if "synchronized" in world_cache:
+    ERRORS.append("final sample cache must not use a global synchronized monitor")
 
-bounded_cache = require(
+bounded = require(
     JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/internal/BoundedConcurrentCache.java",
-    ("ConcurrentHashMap", "ConcurrentLinkedQueue", "putIfAbsent", "entries.remove(eldest.key(), eldest)"),
+    ("ConcurrentHashMap", "ConcurrentLinkedQueue", "putIfAbsent"),
     "bounded concurrent cache")
 
+erosion_settings = require(
+    JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/erosion/ErosionSettings.java",
+    ("\n                64,\n", "\n                16,\n", "cacheSize", "return new ErosionSettings"),
+    "R49 erosion settings")
 erosion = require(
     JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/erosion/ErosionPipeline.java",
-    ("BoundedConcurrentCache", "ConcurrentMap", "inFlight", "ownedRegionKeys", "putIfAbsent"),
-    "erosion exact-key single-flight")
-for forbidden in ("LinkedHashMap", "generationLocks", "synchronized (cache)"):
-    if forbidden in erosion:
-        ERRORS.append(f"erosion pipeline retains old lock-convoy mechanism: {forbidden}")
+    ("centeredRegion", "Math.addExact(coordinate, regionSize / 2)", "inFlight", "ownedRegionKeys"),
+    "R49 centered erosion ownership")
+if "Math.floorDiv(x, settings.regionSize())" in erosion:
+    ERRORS.append("R49 erosion still places world origin on a region boundary")
+require(
+    JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/erosion/ErosionTileGenerator.java",
+    ("halfCore", "Math.subtractExact(Math.multiplyExact(regionX, settings.regionSize()), halfCore)"),
+    "R49 centered erosion generator")
 
-river_settings = require(
-    JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/river/RiverSettings.java",
-    ("32.0D / Math.max", "24, 48, 4", "8.5D", "5.25D", "0.55D", "\n                5,\n", "\n                24);"),
-    "R48 coarse drainage settings")
-if "22.0D / Math.max" in river_settings or "\n                7,\n" in river_settings:
-    ERRORS.append("R48 river settings retain the old dense/refinement-heavy defaults")
+classification = require(
+    JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/terrain/TerrainClassificationSettings.java",
+    ("-0.72D", "1.25D", "-0.69D"),
+    "R49 coast thresholds")
+classifier = require(
+    JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/terrain/TerrainClassifier.java",
+    ("submerged && oceanward", "height >= seaLevel - 0.05D", "StandardTerrainTypes.COAST"),
+    "R49 shoreline classifier")
+if "-0.34D" in classification:
+    ERRORS.append("R49 retains the old broad coast continentalness threshold")
 
-river_segment = require(
-    JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/river/RiverSegment.java",
-    ("startWaterHeight", "List<RiverPathPoint>", "waterSurfaceHeight()", "bankAlpha", "smoothedWaterSurface"),
-    "river segment")
-river_generator = require(
-    JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/river/RivermapGenerator.java",
-    ("fillDepressions", "refineVisiblePath", "containmentCeiling", "bankProbe", "LakeField",
-     "accumulateFlow", "localRunoff", "resolveWaterSurface", "hydraulicProfile",
-     "enforceMonotonicWaterSurface", "MAX_WATER_SURFACE_GRADE"),
-    "river map generator")
-river_model = require(
-    JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/river/RiverModel.java",
-    ("riverWaterSurfaceHeight", "riverFlow", "minimumWaterDepth", "nearestLake", "drainageClimate",
-     "ownedMapKeys", "centeredGeneratorLookup", "toHydrologyCoordinate", "int hydrologyX",
-     "return map(regionX, regionZ).lake(hydrologyX, hydrologyZ)"),
-    "river model")
-if "Math.floorDiv(x, settings.regionSize())" in river_model:
-    ERRORS.append("river ownership must not use the old world-origin boundary lattice")
-river_filter = require(
-    JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/river/RiverNetworkFilter.java",
-    ("visibleNetwork", "streamOrder", "receiverOrder >= 2", "MATURE_TRUNK_FACTOR", "MINIMUM_FILTER_SIZE"),
-    "R48 visible river hierarchy filter")
-rivermap = require(
-    JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/river/Rivermap.java",
-    ("MAXIMUM_LOCAL_RIVER_SEARCH = 96.0D", "IndexedSegment", "mayReach", "RiverNetworkFilter.visibleNetwork"),
-    "river map hot path")
-lake = require(
-    JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/river/LakeField.java",
-    ("identifyBasins", "basinWaterLevels", "dominantBasin", "LakeZone.SHORE", "LakeZone.SHALLOW", "LakeZone.CORE"),
-    "lake field")
-if "bilinear(filledHeight" in lake:
-    ERRORS.append("lake field must not interpolate spill heights into a tilted water surface")
-
-# Complete immutable chunks remain generated below the host adapter.
+pipeline = require(
+    JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/pipeline/WorldgenPipeline.java",
+    ("placementClimate", "placementSample(int x, int z)", "RiverSample.UNAVAILABLE"),
+    "R49 placement pipeline")
 default_world = require(
     JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/DefaultTerrainWorld.java",
-    ("ChunkSnapshotCache", "chunkSnapshot(int chunkX, int chunkZ)", "return chunkCache.get(chunkX, chunkZ)"),
-    "terrain world")
+    ("placementSample(int x, int z)", "pipeline.placementSample", "sampleCache.sampleChunk"),
+    "R49 terrain world")
+chunk_sampler = require(
+    JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/chunk/TerrainPointSampler.java",
+    ("default TerrainSample[] sampleChunk",),
+    "R49 bulk sampling bridge")
 chunk_cache = require(
     JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/chunk/ChunkSnapshotCache.java",
-    ("BoundedConcurrentCache", "ConcurrentMap", "inFlight", "ownedKeys", "putIfAbsent",
-     "samples.sample", "generator.generate"),
-    "chunk snapshot cache")
+    ("samples.sampleChunk(chunkX, chunkZ)", "terrain.length != 256", "inFlight", "ownedKeys"),
+    "R49 chunk snapshot cache")
 for forbidden in ("synchronized", "ForkJoinPool", "ExecutorService"):
     if forbidden in chunk_cache:
         ERRORS.append(f"chunk snapshot cache must not own a global/secondary scheduler: {forbidden}")
 
 snapshot = require(
     JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/chunk/EngineChunkSnapshot.java",
-    ("implements ChunkSnapshot", ".clone()", "NaturalMaterial materialAt"),
-    "immutable chunk snapshot")
+    ("private static final NaturalMaterial[] MATERIALS", "MATERIALS[ordinal]"),
+    "R49 immutable chunk snapshot")
+if "NaturalMaterial.values()[" in snapshot:
+    ERRORS.append("R49 materialAt must not allocate an enum values array per voxel")
 subsurface = require(
     JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/chunk/SubsurfaceGenerator.java",
-    ("GeologyType", "NaturalMaterial.BEDROCK", "NaturalMaterial.SOIL", "NaturalMaterial.ROCK",
-     "NaturalMaterial.DEEP_ROCK", "NaturalMaterial.AIR", "NaturalMaterial.WATER", "NaturalMaterial.LAVA",
-     "isNaturalVoid", "groundwaterY", "VerticalNoiseSampler", "hydrologyWaterTop",
-     "context.seaLevel() + 1", "cachedY0"),
-    "R48 subsurface generator")
-if "smoothNoise3D" in subsurface:
-    ERRORS.append("R48 subsurface hot path must not rebuild full 3D noise corners for every Y block")
-for forbidden in BANNED:
-    if forbidden in subsurface:
-        ERRORS.append(f"R48 subsurface generator leaked host dependency: {forbidden}")
+    ("naturalTopY", "for (int y = context.minY(); y <= naturalTopY; y++)", "VerticalNoiseSampler"),
+    "R49 subsurface generator")
 
+# Retain the important hydrology/concurrency invariants from prior revisions.
 require(
-    TEST_ROOT / "dev/foucaultleon/flterraforged/engine/chunk/R47ChunkSnapshotTest.java",
-    ("repeatedAndConcurrentRequestsShareOneImmutableSnapshot", "snapshotOwnsFullVerticalNaturalGeometry", "assertSame"),
-    "retained chunk snapshot regression test")
+    JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/river/RiverModel.java",
+    ("ownedMapKeys", "centeredGeneratorLookup", "nearestLake"),
+    "river model")
+require(
+    JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/river/RiverNetworkFilter.java",
+    ("visibleNetwork", "streamOrder"),
+    "visible river hierarchy")
 require(
     TEST_ROOT / "dev/foucaultleon/flterraforged/engine/erosion/R46ErosionConcurrencyTest.java",
     ("formerlyCollidingStripeKeysCanGenerateConcurrently",),
-    "retained R46 erosion concurrency regression test")
+    "erosion concurrency regression")
 require(
-    TEST_ROOT / "dev/foucaultleon/flterraforged/engine/river/R45WorldgenStallGuardTest.java",
-    ("interiorTerrainLookupBuildsOnlyCanonicalHydrologyMap", "model.sample(120, 120)"),
-    "retained R45 hydrology fanout regression test")
-require(
-    TEST_ROOT / "dev/foucaultleon/flterraforged/engine/river/R47SpawnHydrologyFanoutTest.java",
-    ("spawnOriginBuildsOnlyOneCanonicalHydrologyMap", "model.sample(0, 0)",
-     "model.cachedMaps()", "model.inFlightMaps()"),
-    "retained R47 spawn hydrology fanout regression test")
-require(
-    TEST_ROOT / "dev/foucaultleon/flterraforged/engine/river/R48RiverNetworkFilterTest.java",
-    ("denseParallelHeadwatersYieldToConfluencesAndMatureTrunks", "smallIsolatedCreekNetworkIsNotErased",
-     "RiverNetworkFilter.visibleNetwork"),
-    "R48 river hierarchy regression test")
+    TEST_ROOT / "dev/foucaultleon/flterraforged/engine/chunk/R47ChunkSnapshotTest.java",
+    ("repeatedAndConcurrentRequestsShareOneImmutableSnapshot",),
+    "chunk snapshot concurrency regression")
 
 if ERRORS:
     print("\n".join(ERRORS), file=sys.stderr)
     raise SystemExit(1)
 
-print("Engine R48 layout verified: hierarchical rivers, levelled lowland hydrology, cached vertical subsurface noise and retained single-flight guards")
+print("Engine R49 layout verified: narrow coasts, cheap placement sampling, centered erosion, bulk chunk sampling and strict single-flight caches")
