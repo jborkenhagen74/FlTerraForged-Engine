@@ -60,7 +60,7 @@ jobs:
 
           mkdir -p build/artifacts
           short_sha="${GITHUB_SHA:0:7}"
-          artifact_path="build/artifacts/FlTerraForged-Engine-R45-${short_sha}.jar"
+          artifact_path="build/artifacts/FlTerraForged-Engine-R46-${short_sha}.jar"
           cp "${jars[0]}" "$artifact_path"
 
           echo "artifact_path=$artifact_path" >> "$GITHUB_OUTPUT"
@@ -83,7 +83,7 @@ jobs:
           JAR_NAME: ${{ steps.collect_engine.outputs.jar_name }}
         run: |
           {
-            echo "### FlTerraForged Engine R45 artifact"
+            echo "### FlTerraForged Engine R46 artifact"
             echo
             echo "- JAR: \`$JAR_NAME\`"
             echo "- SHA-256: \`$ARTIFACT_DIGEST\`"
@@ -92,7 +92,7 @@ jobs:
 
   publish-engine-snapshot:
     name: Publish Engine Snapshot
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/release/r45-worldgen-stall-fix')
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/release/r46-worldgen-cold-start-fix')
     needs: check
     runs-on: ubuntu-latest
     permissions:
@@ -123,4 +123,4 @@ jobs:
           publish_dir: ./build/maven-repository
           keep_files: true
           force_orphan: false
-          commit_message: "Publish Engine R45 ${{ github.sha }}"
+          commit_message: "Publish Engine R46 ${{ github.sha }}"
