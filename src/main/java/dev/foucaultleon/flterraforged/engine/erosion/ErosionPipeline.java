@@ -3,29 +3,37 @@ package dev.foucaultleon.flterraforged.engine.erosion;
 import dev.foucaultleon.flterraforged.engine.api.EngineContext;
 import dev.foucaultleon.flterraforged.engine.cell.Cell;
 import dev.foucaultleon.flterraforged.engine.cell.CellLookup;
-import java.util.Arrays;
-import java.util.LinkedHashMap;
-import java.util.Map;
+import dev.foucaultleon.flterraforged.engine.internal.BoundedConcurrentCache;
+import java.util.HashSet;
 import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 /**
  * Deterministic hydraulic/thermal erosion stage wrapping the base terrain-cell lookup.
  *
- * <p>The stage keeps a bounded shared cache containing only immutable completed erosion regions.
- * Cache lookup/insertion is synchronized, while expensive region generation always happens outside
- * the cache lock. Key-striped generation locks coalesce concurrent misses for the same region
- * without serializing independent regions or introducing recursive {@code computeIfAbsent}-style
- * wait graphs.</p>
+ * <p>Completed immutable erosion regions are retained in a bounded concurrent cache. Cold misses
+ * use exact-key single-flight ownership: one caller generates a region synchronously on its current
+ * thread and duplicate callers for that exact region reuse the same result. Independent regions do
+ * not share a cache monitor or a hash-stripe generation lock, so parallel spawn generation cannot
+ * serialize unrelated erosion work merely because two region keys collide on the same stripe.</p>
+ *
+ * <p>A same-thread recursive ownership guard fails immediately instead of allowing a worker to wait
+ * on its own unfinished region. Region generation itself only reads the pre-erosion terrain lookup,
+ * keeping the dependency graph acyclic.</p>
  */
 public final class ErosionPipeline implements CellLookup {
-
-    private static final int GENERATION_LOCK_COUNT = 64;
 
     private final CellLookup baseTerrain;
     private final ErosionSettings settings;
     private final ErosionTileGenerator generator;
-    private final TileCache cache;
-    private final Object[] generationLocks;
+    private final BoundedConcurrentCache<Long, ErosionTile> cache;
+    private final ConcurrentMap<Long, CompletableFuture<ErosionTile>> inFlight =
+            new ConcurrentHashMap<>();
+    private final ThreadLocal<Set<Long>> ownedRegionKeys = ThreadLocal.withInitial(HashSet::new);
 
     /**
      * Creates an erosion pipeline.
@@ -38,9 +46,12 @@ public final class ErosionPipeline implements CellLookup {
     public ErosionPipeline(long seed, EngineContext world, CellLookup baseTerrain, ErosionSettings settings) {
         this.baseTerrain = Objects.requireNonNull(baseTerrain, "baseTerrain");
         this.settings = Objects.requireNonNull(settings, "settings");
-        this.generator = new ErosionTileGenerator(seed, Objects.requireNonNull(world, "world"), baseTerrain, settings);
-        this.cache = new TileCache(settings.cacheSize());
-        this.generationLocks = createGenerationLocks();
+        this.generator = new ErosionTileGenerator(
+                seed,
+                Objects.requireNonNull(world, "world"),
+                baseTerrain,
+                settings);
+        this.cache = new BoundedConcurrentCache<>(settings.cacheSize());
     }
 
     /** {@inheritDoc} */
@@ -67,51 +78,67 @@ public final class ErosionPipeline implements CellLookup {
     public ErosionSample sample(int x, int z) {
         int regionX = Math.floorDiv(x, settings.regionSize());
         int regionZ = Math.floorDiv(z, settings.regionSize());
-        long key = (((long) regionX) << 32) ^ (regionZ & 0xFFFFFFFFL);
-        ErosionTile tile;
-        synchronized (cache) {
-            tile = cache.get(key);
-        }
-        if (tile == null) {
-            synchronized (generationLock(key)) {
-                synchronized (cache) {
-                    tile = cache.get(key);
-                }
-                if (tile == null) {
-                    tile = generator.generate(regionX, regionZ);
-                    synchronized (cache) {
-                        cache.put(key, tile);
-                    }
-                }
+        long key = key(regionX, regionZ);
+        ErosionTile completed = cache.get(key);
+        return completed == null
+                ? loadSingleFlight(key, regionX, regionZ).sample(x, z, settings.maximumHeightChange())
+                : completed.sample(x, z, settings.maximumHeightChange());
+    }
+
+    private ErosionTile loadSingleFlight(long key, int regionX, int regionZ) {
+        Set<Long> localOwnership = ownedRegionKeys.get();
+        CompletableFuture<ErosionTile> owned = new CompletableFuture<>();
+        CompletableFuture<ErosionTile> existing = inFlight.putIfAbsent(key, owned);
+        if (existing != null) {
+            if (localOwnership.contains(key)) {
+                throw new IllegalStateException(
+                        "Recursive erosion-region load detected for region " + regionX + ',' + regionZ);
             }
-        }
-        return tile.sample(x, z, settings.maximumHeightChange());
-    }
-
-    private Object generationLock(long key) {
-        int index = (int) (key ^ (key >>> 32)) & (GENERATION_LOCK_COUNT - 1);
-        return generationLocks[index];
-    }
-
-    private static Object[] createGenerationLocks() {
-        Object[] locks = new Object[GENERATION_LOCK_COUNT];
-        Arrays.setAll(locks, ignored -> new Object());
-        return locks;
-    }
-
-    private static final class TileCache extends LinkedHashMap<Long, ErosionTile> {
-
-        private static final long serialVersionUID = 1L;
-        private final int maximumSize;
-
-        TileCache(int maximumSize) {
-            super(maximumSize + 1, 0.75F, true);
-            this.maximumSize = maximumSize;
+            return await(existing);
         }
 
-        @Override
-        protected boolean removeEldestEntry(Map.Entry<Long, ErosionTile> eldest) {
-            return size() > maximumSize;
+        if (!localOwnership.add(key)) {
+            inFlight.remove(key, owned);
+            throw new IllegalStateException(
+                    "Recursive erosion-region ownership detected for region " + regionX + ',' + regionZ);
         }
+        try {
+            ErosionTile generated = generator.generate(regionX, regionZ);
+            ErosionTile retained = cache.putIfAbsent(key, generated);
+            owned.complete(retained);
+            return retained;
+        } catch (Throwable throwable) {
+            owned.completeExceptionally(throwable);
+            throw propagate(throwable);
+        } finally {
+            localOwnership.remove(key);
+            if (localOwnership.isEmpty()) {
+                ownedRegionKeys.remove();
+            }
+            inFlight.remove(key, owned);
+        }
+    }
+
+    private static ErosionTile await(CompletableFuture<ErosionTile> future) {
+        try {
+            return future.join();
+        } catch (CompletionException exception) {
+            Throwable cause = exception.getCause();
+            throw propagate(cause == null ? exception : cause);
+        }
+    }
+
+    private static RuntimeException propagate(Throwable throwable) {
+        if (throwable instanceof RuntimeException runtimeException) {
+            return runtimeException;
+        }
+        if (throwable instanceof Error error) {
+            throw error;
+        }
+        return new IllegalStateException("Erosion-region generation failed", throwable);
+    }
+
+    private static long key(int regionX, int regionZ) {
+        return (((long) regionX) << 32) ^ (regionZ & 0xFFFFFFFFL);
     }
 }
