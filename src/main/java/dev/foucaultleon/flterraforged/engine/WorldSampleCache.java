@@ -19,8 +19,9 @@ import java.util.concurrent.ConcurrentMap;
  * hydrology guards, complete chunk snapshots and surface consumers can reuse exactly the same final
  * X/Z samples. Cold misses use exact-key single-flight ownership.</p>
  *
- * <p>Tiles are 16x16 to match Minecraft chunks. R49 exposes an aligned bulk read so complete chunk
- * snapshot generation performs one cache lookup instead of 256 repeated point lookups.</p>
+ * <p>Tiles are 16x16 to match Minecraft chunks. Public bulk reads return a caller-owned array,
+ * while the package-private snapshot bridge can consume the cached immutable array directly. This
+ * avoids another 256-reference clone for every complete chunk snapshot.</p>
  */
 final class WorldSampleCache {
 
@@ -51,6 +52,10 @@ final class WorldSampleCache {
 
     TerrainSample[] sampleChunk(int chunkX, int chunkZ) {
         return tile(chunkX, chunkZ).copySamples();
+    }
+
+    TerrainSample[] sampleChunkShared(int chunkX, int chunkZ) {
+        return tile(chunkX, chunkZ).sharedSamples();
     }
 
     void clear() {
@@ -164,6 +169,10 @@ final class WorldSampleCache {
 
         TerrainSample[] copySamples() {
             return samples.clone();
+        }
+
+        TerrainSample[] sharedSamples() {
+            return samples;
         }
     }
 }
