@@ -13,8 +13,9 @@ import java.util.PriorityQueue;
  * Immutable basin-aware depression field used to materialize irregular ponds and lakes.
  *
  * <p>Priority-flood spill elevations are first grouped into connected basins. Each basin owns one
- * constant water level. Continuous terrain height and deterministic edge noise shape only the
- * shoreline; they never interpolate or tilt the lake surface itself.</p>
+ * constant water level. R50 also assigns a stable hydrology-grid anchor to every basin. Overlapping
+ * padded river maps can therefore recognize the same physical lake and resolve one canonical water
+ * level instead of exposing a vertical water seam at a map boundary.</p>
  */
 public final class LakeField {
 
@@ -41,6 +42,7 @@ public final class LakeField {
     private final int[] basinIds;
     private final double[] basinWaterLevels;
     private final int[] basinNodeCounts;
+    private final long[] basinKeys;
     private final double[] basinInteriorDistance;
     private final double minimumDepth;
     private final double shoreBlend;
@@ -88,6 +90,7 @@ public final class LakeField {
         this.basinIds = basins.ids();
         this.basinWaterLevels = basins.waterLevels();
         this.basinNodeCounts = basins.nodeCounts();
+        this.basinKeys = basins.keys();
         this.basinInteriorDistance = computeBasinInteriorDistances();
     }
 
@@ -121,7 +124,8 @@ public final class LakeField {
 
         double original = bilinear(originalHeight, gx, gz, tx, tz);
         double geometricDepth = waterSurface - original;
-        double shorelineNoise = smoothValueNoise(x * 0.035D, z * 0.035D) * Math.min(0.32D, shoreBlend * 0.24D);
+        double shorelineNoise = smoothValueNoise(x * 0.035D, z * 0.035D)
+                * Math.min(0.32D, shoreBlend * 0.24D);
         double effectiveDepth = geometricDepth + shorelineNoise;
         double depthDistance = effectiveDepth / SHORE_REFERENCE_GRADE;
         double topologyDistance = bilinearBasinDistance(gx, gz, tx, tz, basinId);
@@ -130,6 +134,7 @@ public final class LakeField {
             return LakeHit.NONE;
         }
 
+        long basinKey = basinKeys[basinId];
         if (shoreDistance < WATER_EDGE_INSET) {
             double shoreInfluence = Maths.smooth(Maths.clamp(
                     (shoreDistance + SHORE_TRANSITION_WIDTH)
@@ -141,7 +146,8 @@ public final class LakeField {
                     shoreInfluence * 0.34D,
                     waterSurface,
                     0.0D,
-                    shoreDistance);
+                    shoreDistance,
+                    basinKey);
         }
 
         double waterDistance = shoreDistance - WATER_EDGE_INSET;
@@ -165,7 +171,8 @@ public final class LakeField {
                 0.35D + bodyInfluence * 0.30D + deepInfluence * 0.35D,
                 waterSurface,
                 desiredDepth,
-                shoreDistance);
+                shoreDistance,
+                basinKey);
     }
 
     private BasinData identifyBasins() {
@@ -173,6 +180,7 @@ public final class LakeField {
         Arrays.fill(ids, -1);
         List<Double> levels = new ArrayList<>();
         List<Integer> nodeCounts = new ArrayList<>();
+        List<Long> keys = new ArrayList<>();
         ArrayDeque<Integer> queue = new ArrayDeque<>();
 
         for (int index = 0; index < originalHeight.length; index++) {
@@ -185,12 +193,26 @@ public final class LakeField {
             ids[index] = basinId;
             queue.add(index);
             int nodeCount = 0;
+            double anchorHeight = Double.POSITIVE_INFINITY;
+            int anchorX = 0;
+            int anchorZ = 0;
 
             while (!queue.isEmpty()) {
                 int current = queue.removeFirst();
                 nodeCount++;
                 int gx = current % width;
                 int gz = current / width;
+                int worldX = Math.addExact(originX, Math.multiplyExact(gx, spacing));
+                int worldZ = Math.addExact(originZ, Math.multiplyExact(gz, spacing));
+                double candidateHeight = originalHeight[current];
+                if (candidateHeight < anchorHeight - BASIN_EPSILON
+                        || (Math.abs(candidateHeight - anchorHeight) <= BASIN_EPSILON
+                        && lexicographicallyBefore(worldX, worldZ, anchorX, anchorZ))) {
+                    anchorHeight = candidateHeight;
+                    anchorX = worldX;
+                    anchorZ = worldZ;
+                }
+
                 for (int direction = 0; direction < NEIGHBOR_X.length; direction++) {
                     int nx = gx + NEIGHBOR_X[direction];
                     int nz = gz + NEIGHBOR_Z[direction];
@@ -209,15 +231,18 @@ public final class LakeField {
                 }
             }
             nodeCounts.add(nodeCount);
+            keys.add(key(anchorX, anchorZ));
         }
 
         double[] waterLevels = new double[levels.size()];
         int[] counts = new int[nodeCounts.size()];
+        long[] stableKeys = new long[keys.size()];
         for (int index = 0; index < levels.size(); index++) {
             waterLevels[index] = levels.get(index);
             counts[index] = nodeCounts.get(index);
+            stableKeys[index] = keys.get(index);
         }
-        return new BasinData(ids, waterLevels, counts);
+        return new BasinData(ids, waterLevels, counts, stableKeys);
     }
 
     private double basinMinimumDepth(int basinId, double waterSurface) {
@@ -403,6 +428,14 @@ public final class LakeField {
         return ((value & 0x1FFFFFL) / (double) 0x1FFFFF) * 2.0D - 1.0D;
     }
 
+    private static boolean lexicographicallyBefore(int x, int z, int otherX, int otherZ) {
+        return x < otherX || (x == otherX && z < otherZ);
+    }
+
+    private static long key(int x, int z) {
+        return (((long) x) << 32) ^ (z & 0xFFFFFFFFL);
+    }
+
     /** {@inheritDoc} */
     @Override
     public boolean equals(Object other) {
@@ -434,7 +467,7 @@ public final class LakeField {
         return result;
     }
 
-    private record BasinData(int[] ids, double[] waterLevels, int[] nodeCounts) {
+    private record BasinData(int[] ids, double[] waterLevels, int[] nodeCounts, long[] keys) {
     }
 
     private record DistanceNode(int index, double distance) {
