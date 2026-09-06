@@ -100,13 +100,18 @@ final class SubsurfaceGenerator {
             int x,
             int z) {
         int surfaceY = column.solidSurfaceY();
+        int naturalTopY = Math.max(surfaceY, column.waterTopExclusive() - 1);
         int bedrockThickness = 1 + (int) Math.floor(unitHash(x, context.minY(), z, FLOOR_SALT) * 4.0D);
         int lavaLevel = context.minY() + Math.max(10, context.height() / 24);
         VerticalNoiseSampler caveA = new VerticalNoiseSampler(x, z, 42.0D, 30.0D, 42.0D, CAVE_A_SALT);
         VerticalNoiseSampler caveB = new VerticalNoiseSampler(x, z, 58.0D, 37.0D, 58.0D, CAVE_B_SALT);
         VerticalNoiseSampler cavern = new VerticalNoiseSampler(x, z, 92.0D, 54.0D, 92.0D, CAVERN_SALT);
         VerticalNoiseSampler ravine = new VerticalNoiseSampler(x, z, 150.0D, 45.0D, 150.0D, RAVINE_SALT);
-        for (int y = context.minY(); y < context.maxYExclusive(); y++) {
+
+        // NaturalMaterial.AIR is ordinal zero, and a new byte[] is already zero-filled. Nothing can
+        // exist above naturalTopY, so R49 leaves that upper volume untouched instead of evaluating
+        // hundreds of guaranteed-air Y positions for every lowland column.
+        for (int y = context.minY(); y <= naturalTopY; y++) {
             NaturalMaterial material;
             if (y < context.minY() + bedrockThickness) {
                 material = NaturalMaterial.BEDROCK;
