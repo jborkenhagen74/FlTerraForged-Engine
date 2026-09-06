@@ -7,42 +7,48 @@ import dev.foucaultleon.flterraforged.engine.api.chunk.NaturalMaterial;
 import dev.foucaultleon.flterraforged.engine.api.river.RiverSample;
 import dev.foucaultleon.flterraforged.engine.api.terrain.StandardTerrainTypes;
 import dev.foucaultleon.flterraforged.engine.api.terrain.TerrainSample;
+import dev.foucaultleon.flterraforged.engine.noise.ValueNoise3D;
+import java.util.Objects;
 
-/** Resolves all natural vertical geometry without calling any host world-generation stage. */
+/** Generates immutable vertical natural-material fields for Engine-owned chunks. */
 final class SubsurfaceGenerator {
 
-    private static final long GEOLOGY_SALT = 0x74D3A5B19E3779B9L;
-    private static final long SOIL_SALT = 0x1A976CE5D4B2F301L;
-    private static final long GROUNDWATER_SALT = 0x6C8E9CF570932BD5L;
-    private static final long CAVE_A_SALT = 0x2FD42B81A76C91E3L;
-    private static final long CAVE_B_SALT = 0x59C33D14E82A6B07L;
-    private static final long CAVERN_SALT = 0x0D9187F4AC52E36BL;
-    private static final long RAVINE_SALT = 0x63B57A09DE214CF1L;
-    private static final long FLOOR_SALT = 0x45EA92D7138CB6F0L;
-    private static final long LAVA_SALT = 0x7F21C54DA893B60EL;
     private static final double MIN_WET_DEPTH = 0.05D;
+    private static final double MOUTH_CLAMP_HEIGHT = 6.0D;
 
     private final EngineContext context;
+    private final ValueNoise3D caveNoise;
+    private final ValueNoise3D cavernNoise;
+    private final ValueNoise3D ravineNoise;
+    private final ValueNoise3D geologyNoise;
 
     SubsurfaceGenerator(EngineContext context) {
-        this.context = context;
+        this.context = Objects.requireNonNull(context, "context");
+        long seed = context.seed();
+        this.caveNoise = new ValueNoise3D(seed ^ 0xF1357AEA2E62A9C5L, 0.038D);
+        this.cavernNoise = new ValueNoise3D(seed ^ 0x9E3779B97F4A7C15L, 0.017D);
+        this.ravineNoise = new ValueNoise3D(seed ^ 0xC2B2AE3D27D4EB4FL, 0.024D);
+        this.geologyNoise = new ValueNoise3D(seed ^ 0x94D049BB133111EBL, 0.0065D);
     }
 
-    EngineChunkSnapshot generate(int chunkX, int chunkZ, TerrainSample[] samples) {
-        int height = context.height();
-        ColumnSnapshot[] columns = new ColumnSnapshot[256];
-        byte[] materials = new byte[256 * height];
+    EngineChunkSnapshot generate(int chunkX, int chunkZ, TerrainSample[] terrain) {
+        if (terrain.length != EngineChunkSnapshot.AREA) {
+            throw new IllegalArgumentException("terrain must contain exactly 256 samples");
+        }
+        int height = context.maxYExclusive() - context.minY();
+        byte[] materials = new byte[EngineChunkSnapshot.AREA * height];
+        ColumnSnapshot[] columns = new ColumnSnapshot[EngineChunkSnapshot.AREA];
         int originX = chunkX << 4;
         int originZ = chunkZ << 4;
-        for (int localZ = 0; localZ < 16; localZ++) {
-            for (int localX = 0; localX < 16; localX++) {
-                int columnIndex = localZ * 16 + localX;
+        for (int localZ = 0; localZ < EngineChunkSnapshot.SIZE; localZ++) {
+            for (int localX = 0; localX < EngineChunkSnapshot.SIZE; localX++) {
+                int columnIndex = localZ * EngineChunkSnapshot.SIZE + localX;
                 int x = originX + localX;
                 int z = originZ + localZ;
-                TerrainSample sample = samples[columnIndex];
+                TerrainSample sample = terrain[columnIndex];
                 ColumnSnapshot column = resolveColumn(sample, x, z);
                 columns[columnIndex] = column;
-                fillColumn(materials, columnIndex * height, column, x, z);
+                fillColumn(materials, columnIndex, x, z, column, sample);
             }
         }
         return new EngineChunkSnapshot(
@@ -50,6 +56,7 @@ final class SubsurfaceGenerator {
                 chunkZ,
                 context.minY(),
                 context.maxYExclusive(),
+                terrain,
                 columns,
                 materials);
     }
@@ -57,227 +64,170 @@ final class SubsurfaceGenerator {
     private ColumnSnapshot resolveColumn(TerrainSample sample, int x, int z) {
         int surfaceY = clamp(
                 (int) Math.floor(sample.surfaceHeight()),
-                context.minY() + 1,
+                context.minY(),
                 context.maxYExclusive() - 2);
         int solidTop = surfaceY + 1;
         int waterTop = solidTop;
-        if (StandardTerrainTypes.OCEAN.equals(sample.terrainType())
-                || StandardTerrainTypes.COAST.equals(sample.terrainType())) {
+        boolean marine = StandardTerrainTypes.OCEAN.equals(sample.terrainType())
+                || StandardTerrainTypes.COAST.equals(sample.terrainType());
+        if (marine) {
             waterTop = Math.max(waterTop, context.seaLevel() + 1);
         }
+
         RiverSample hydrology = sample.river();
         if (hydrology.hasWaterSurfaceHeight()
                 && hydrology.depth() > MIN_WET_DEPTH
                 && hydrology.waterSurfaceHeight() > sample.surfaceHeight()) {
-            int hydrologyWaterTop = (int) Math.floor(hydrology.waterSurfaceHeight()) + 1;
-            if (surfaceY <= context.seaLevel() + 1
-                    && hydrology.waterSurfaceHeight() <= context.seaLevel() + 1.5D) {
-                hydrologyWaterTop = Math.max(hydrologyWaterTop, context.seaLevel() + 1);
+            double waterSurface = hydrology.waterSurfaceHeight();
+            // R51 belt-and-suspenders invariant: low river mouths may never materialize above the
+            // global ocean surface. The pipeline already canonicalizes them; this final snapshot
+            // guard prevents a future hydrology provider from reintroducing a water shelf.
+            if (marine
+                    || (surfaceY <= context.seaLevel() + 2
+                            && waterSurface <= context.seaLevel() + MOUTH_CLAMP_HEIGHT)) {
+                waterSurface = Math.min(waterSurface, context.seaLevel());
             }
+            int hydrologyWaterTop = (int) Math.floor(waterSurface) + 1;
             waterTop = Math.max(waterTop, hydrologyWaterTop);
         }
         waterTop = clamp(waterTop, solidTop, context.maxYExclusive());
 
-        int soilDepth = 3 + (int) Math.floor(unitHash(x >> 4, 0, z >> 4, SOIL_SALT) * 3.0D);
-        int groundwaterBase = context.seaLevel() - 7;
-        int groundwaterOffset = (int) Math.round(
-                smoothNoise2D(x / 96.0D, z / 96.0D, GROUNDWATER_SALT) * 8.0D);
-        int groundwaterY = Math.min(surfaceY - 7, groundwaterBase + groundwaterOffset);
-        groundwaterY = clamp(groundwaterY, context.minY() + 6, context.maxYExclusive() - 2);
+        int soilDepth = soilDepth(sample);
+        int deepRockY = Math.min(surfaceY - soilDepth - 10, context.seaLevel() - 18);
+        deepRockY = clamp(deepRockY, context.minY() + 5, surfaceY - soilDepth);
+        int bedrockTop = Math.min(context.minY() + 5, context.maxYExclusive() - 1);
+        int groundwaterY = Math.min(context.seaLevel() - 5, surfaceY - 10);
+        groundwaterY = clamp(groundwaterY, context.minY() + 6, context.maxYExclusive() - 1);
+        int lavaTop = Math.min(context.minY() + 12, context.maxYExclusive() - 1);
+        GeologyType geology = geology(x, z, surfaceY);
         return new ColumnSnapshot(
-                sample,
-                geology(x, z),
                 surfaceY,
                 waterTop,
                 soilDepth,
-                groundwaterY);
+                deepRockY,
+                bedrockTop,
+                groundwaterY,
+                lavaTop,
+                geology);
     }
 
     private void fillColumn(
             byte[] materials,
-            int offset,
-            ColumnSnapshot column,
+            int columnIndex,
             int x,
-            int z) {
-        int surfaceY = column.solidSurfaceY();
-        int naturalTopY = Math.max(surfaceY, column.waterTopExclusive() - 1);
-        int bedrockThickness = 1 + (int) Math.floor(unitHash(x, context.minY(), z, FLOOR_SALT) * 4.0D);
-        int lavaLevel = context.minY() + Math.max(10, context.height() / 24);
-        VerticalNoiseSampler caveA = new VerticalNoiseSampler(x, z, 42.0D, 30.0D, 42.0D, CAVE_A_SALT);
-        VerticalNoiseSampler caveB = new VerticalNoiseSampler(x, z, 58.0D, 37.0D, 58.0D, CAVE_B_SALT);
-        VerticalNoiseSampler cavern = new VerticalNoiseSampler(x, z, 92.0D, 54.0D, 92.0D, CAVERN_SALT);
-        VerticalNoiseSampler ravine = new VerticalNoiseSampler(x, z, 150.0D, 45.0D, 150.0D, RAVINE_SALT);
-
-        // NaturalMaterial.AIR is ordinal zero, and a new byte[] is already zero-filled. Nothing can
-        // exist above naturalTopY, so R49 leaves that upper volume untouched instead of evaluating
-        // hundreds of guaranteed-air Y positions for every lowland column.
+            int z,
+            ColumnSnapshot column,
+            TerrainSample sample) {
+        int height = context.maxYExclusive() - context.minY();
+        int naturalTopY = Math.min(
+                context.maxYExclusive() - 1,
+                Math.max(column.surfaceY(), column.waterTopExclusive() - 1));
+        ValueNoise3D.VerticalSampler caveSampler = caveNoise.verticalSampler(x, z);
+        ValueNoise3D.VerticalSampler cavernSampler = cavernNoise.verticalSampler(x, z);
+        ValueNoise3D.VerticalSampler ravineSampler = ravineNoise.verticalSampler(x, z);
         for (int y = context.minY(); y <= naturalTopY; y++) {
-            NaturalMaterial material;
-            if (y < context.minY() + bedrockThickness) {
-                material = NaturalMaterial.BEDROCK;
-            } else if (y > surfaceY) {
-                material = y < column.waterTopExclusive()
-                        ? NaturalMaterial.WATER
-                        : NaturalMaterial.AIR;
-            } else if (y == surfaceY) {
-                material = NaturalMaterial.SURFACE;
-            } else {
-                int depth = surfaceY - y;
-                if (isNaturalVoid(y, depth, column.soilDepth(), caveA, caveB, cavern, ravine)) {
-                    if (y <= lavaLevel && unitHash(x, y, z, LAVA_SALT) > 0.34D) {
-                        material = NaturalMaterial.LAVA;
-                    } else if (y <= column.groundwaterY()) {
-                        material = NaturalMaterial.WATER;
-                    } else {
-                        material = NaturalMaterial.AIR;
-                    }
-                } else if (depth <= column.soilDepth()) {
-                    material = NaturalMaterial.SOIL;
-                } else if (depth >= 48 || y < context.minY() + context.height() / 3) {
-                    material = NaturalMaterial.DEEP_ROCK;
-                } else {
-                    material = NaturalMaterial.ROCK;
-                }
-            }
-            materials[offset + y - context.minY()] = (byte) material.ordinal();
+            NaturalMaterial material = materialAt(x, y, z, column, sample, caveSampler, cavernSampler, ravineSampler);
+            int yIndex = y - context.minY();
+            materials[yIndex * EngineChunkSnapshot.AREA + columnIndex] = (byte) material.ordinal();
+        }
+        if (height < 1) {
+            throw new IllegalStateException("World height must be positive");
         }
     }
 
-    private boolean isNaturalVoid(
+    private NaturalMaterial materialAt(
+            int x,
             int y,
-            int depth,
-            int soilDepth,
-            VerticalNoiseSampler caveA,
-            VerticalNoiseSampler caveB,
-            VerticalNoiseSampler cavern,
-            VerticalNoiseSampler ravine) {
-        if (depth <= Math.max(7, soilDepth + 3) || y <= context.minY() + 5) {
+            int z,
+            ColumnSnapshot column,
+            TerrainSample sample,
+            ValueNoise3D.VerticalSampler caveSampler,
+            ValueNoise3D.VerticalSampler cavernSampler,
+            ValueNoise3D.VerticalSampler ravineSampler) {
+        if (y >= column.waterTopExclusive() && y > column.surfaceY()) {
+            return NaturalMaterial.AIR;
+        }
+        if (y > column.surfaceY()) {
+            return NaturalMaterial.WATER;
+        }
+        if (y <= context.minY()) {
+            return NaturalMaterial.BEDROCK;
+        }
+        if (y <= column.bedrockTop()) {
+            double chance = geologyNoise.sample(x, y, z);
+            if (chance > -0.20D + (y - context.minY()) * 0.13D) {
+                return NaturalMaterial.BEDROCK;
+            }
+        }
+
+        if (isOpenSubsurface(y, column, caveSampler, cavernSampler, ravineSampler)) {
+            if (y <= column.lavaTop()) {
+                return NaturalMaterial.LAVA;
+            }
+            if (y <= column.groundwaterY() && sample.surfaceHeight() > context.seaLevel() - 6.0D) {
+                return NaturalMaterial.WATER;
+            }
+            return NaturalMaterial.AIR;
+        }
+
+        int depth = column.surfaceY() - y;
+        if (depth == 0) {
+            return NaturalMaterial.SURFACE;
+        }
+        if (depth <= column.soilDepth()) {
+            return NaturalMaterial.SOIL;
+        }
+        if (y <= column.deepRockY()) {
+            return NaturalMaterial.DEEP_ROCK;
+        }
+        return NaturalMaterial.ROCK;
+    }
+
+    private boolean isOpenSubsurface(
+            int y,
+            ColumnSnapshot column,
+            ValueNoise3D.VerticalSampler caveSampler,
+            ValueNoise3D.VerticalSampler cavernSampler,
+            ValueNoise3D.VerticalSampler ravineSampler) {
+        int depth = column.surfaceY() - y;
+        if (depth < 8 || y <= column.bedrockTop() + 1) {
             return false;
         }
-        double caveAValue = caveA.sample(y);
-        double caveBValue = caveB.sample(y);
-        boolean tunnel = Math.abs(caveAValue) < 0.105D && Math.abs(caveBValue) < 0.32D;
-
-        double cavernValue = cavern.sample(y);
-        boolean largeCavern = depth > 18 && cavernValue > 0.68D && caveAValue > -0.28D;
-
-        double ravineValue = ravine.sample(y);
-        boolean narrowRavine = depth > 12 && Math.abs(ravineValue) < 0.028D && caveBValue > 0.05D;
-        return tunnel || largeCavern || narrowRavine;
+        double cave = caveSampler.sample(y);
+        double cavern = cavernSampler.sample(y);
+        double ravine = Math.abs(ravineSampler.sample(y));
+        double caveThreshold = depth > 28 ? 0.56D : 0.66D;
+        boolean tunnel = cave > caveThreshold;
+        boolean largeCavern = depth > 22 && cavern > 0.71D;
+        boolean ravineCut = depth > 12 && ravine < 0.055D && cave > 0.05D;
+        return tunnel || largeCavern || ravineCut;
     }
 
-    private GeologyType geology(int x, int z) {
-        double value = smoothNoise2D(x / 192.0D, z / 192.0D, GEOLOGY_SALT);
-        if (value < -0.58D) {
-            return GeologyType.SEDIMENTARY;
-        }
-        if (value < -0.22D) {
+    private GeologyType geology(int x, int z, int surfaceY) {
+        double value = geologyNoise.sample(x, surfaceY - 24, z);
+        if (value < -0.52D) {
             return GeologyType.CARBONATE;
         }
-        if (value < 0.18D) {
-            return GeologyType.METAMORPHIC;
+        if (value < -0.12D) {
+            return GeologyType.SEDIMENTARY;
         }
-        if (value < 0.55D) {
-            return GeologyType.GRANITIC;
+        if (value > 0.55D) {
+            return GeologyType.VOLCANIC;
         }
-        return GeologyType.VOLCANIC;
-    }
-
-    private double smoothNoise2D(double x, double z, long salt) {
-        int x0 = fastFloor(x);
-        int z0 = fastFloor(z);
-        int x1 = x0 + 1;
-        int z1 = z0 + 1;
-        double fx = fade(x - x0);
-        double fz = fade(z - z0);
-        double a = lerp(signedHash(x0, 0, z0, salt), signedHash(x1, 0, z0, salt), fx);
-        double b = lerp(signedHash(x0, 0, z1, salt), signedHash(x1, 0, z1, salt), fx);
-        return lerp(a, b, fz);
-    }
-
-    private double signedHash(int x, int y, int z, long salt) {
-        return unitHash(x, y, z, salt) * 2.0D - 1.0D;
-    }
-
-    private double unitHash(int x, int y, int z, long salt) {
-        long value = context.seed() ^ salt;
-        value ^= (long) x * 0x9E3779B97F4A7C15L;
-        value ^= (long) y * 0xC2B2AE3D27D4EB4FL;
-        value ^= (long) z * 0x165667B19E3779F9L;
-        value ^= value >>> 30;
-        value *= 0xBF58476D1CE4E5B9L;
-        value ^= value >>> 27;
-        value *= 0x94D049BB133111EBL;
-        value ^= value >>> 31;
-        return (value >>> 11) * 0x1.0p-53;
-    }
-
-    private static int fastFloor(double value) {
-        int integer = (int) value;
-        return value < integer ? integer - 1 : integer;
-    }
-
-    private static double fade(double value) {
-        return value * value * (3.0D - 2.0D * value);
-    }
-
-    private static double lerp(double a, double b, double alpha) {
-        return a + (b - a) * alpha;
-    }
-
-    private static int clamp(int value, int min, int max) {
-        return Math.max(min, Math.min(max, value));
-    }
-
-    /** Reuses the four X/Z-interpolated lattice values while scanning one vertical column. */
-    private final class VerticalNoiseSampler {
-
-        private final int x0;
-        private final int x1;
-        private final int z0;
-        private final int z1;
-        private final double fx;
-        private final double fz;
-        private final double inverseYScale;
-        private final long salt;
-        private int cachedY0 = Integer.MIN_VALUE;
-        private double x00;
-        private double x10;
-        private double x01;
-        private double x11;
-
-        private VerticalNoiseSampler(
-                int x,
-                int z,
-                double xScale,
-                double yScale,
-                double zScale,
-                long salt) {
-            double scaledX = x / xScale;
-            double scaledZ = z / zScale;
-            this.x0 = fastFloor(scaledX);
-            this.x1 = x0 + 1;
-            this.z0 = fastFloor(scaledZ);
-            this.z1 = z0 + 1;
-            this.fx = fade(scaledX - x0);
-            this.fz = fade(scaledZ - z0);
-            this.inverseYScale = 1.0D / yScale;
-            this.salt = salt;
+        if (value > 0.16D) {
+            return GeologyType.CRYSTALLINE;
         }
+        return GeologyType.GENERIC;
+    }
 
-        private double sample(int y) {
-            double scaledY = y * inverseYScale;
-            int y0 = fastFloor(scaledY);
-            if (y0 != cachedY0) {
-                int y1 = y0 + 1;
-                x00 = lerp(signedHash(x0, y0, z0, salt), signedHash(x1, y0, z0, salt), fx);
-                x10 = lerp(signedHash(x0, y1, z0, salt), signedHash(x1, y1, z0, salt), fx);
-                x01 = lerp(signedHash(x0, y0, z1, salt), signedHash(x1, y0, z1, salt), fx);
-                x11 = lerp(signedHash(x0, y1, z1, salt), signedHash(x1, y1, z1, salt), fx);
-                cachedY0 = y0;
-            }
-            double fy = fade(scaledY - y0);
-            return lerp(lerp(x00, x10, fy), lerp(x01, x11, fy), fz);
-        }
+    private static int soilDepth(TerrainSample sample) {
+        double slope = sample.hasSlope() ? sample.slope() : 0.0D;
+        double moisture = sample.climate().isAvailable() ? sample.climate().moisture() : 0.5D;
+        int depth = 3 + (int) Math.round(moisture * 2.0D - slope * 0.65D);
+        return clamp(depth, 1, 6);
+    }
+
+    private static int clamp(int value, int minimum, int maximum) {
+        return Math.max(minimum, Math.min(maximum, value));
     }
 }
