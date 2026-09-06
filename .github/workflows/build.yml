@@ -34,7 +34,7 @@ jobs:
       - name: Verify layout
         run: python3 tools/verify-layout.py
 
-      - name: Build, test and create runtime JAR against public Engine API Maven repository
+      - name: Build, test and create runtime JAR against published bulk-sampling Engine API
         run: gradle --no-daemon --refresh-dependencies clean check jar
 
       - name: Collect Engine JAR
@@ -80,6 +80,7 @@ jobs:
             echo "- Lakes: stable basin anchors reconcile cross-map water levels"
             echo "- Terrain: chunk-aligned bulk sample shared with host biome generation"
             echo "- Performance: R49 centered erosion, bulk terrain and subsurface fast paths retained"
+            echo "- Engine API: published sampleChunk bulk hook consumed with refreshed dependencies"
             echo "- SHA-256: \`$ARTIFACT_DIGEST\`"
             echo "- [Download artifact]($ARTIFACT_URL)"
           } >> "$GITHUB_STEP_SUMMARY"
