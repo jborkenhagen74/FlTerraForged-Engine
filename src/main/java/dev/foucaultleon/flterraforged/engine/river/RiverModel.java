@@ -28,6 +28,11 @@ import java.util.concurrent.ConcurrentMap;
  * every lake sample only multiplied cold-map construction and was the main spawn-time working-set
  * explosion. Linear channels retain their narrow boundary probes because their owned segments may
  * physically cross a region edge.</p>
+ *
+ * <p>R47 centers the internal hydrology ownership lattice around the world origin by translating
+ * hydrology coordinates by half a region. Terrain and climate delegates are translated back before
+ * sampling, so the drainage implementation remains unchanged while world coordinate {@code (0, 0)}
+ * lies in the middle of one canonical map instead of on a four-map intersection.</p>
  */
 public final class RiverModel implements CellLookup {
 
@@ -92,12 +97,10 @@ public final class RiverModel implements CellLookup {
         this.world = Objects.requireNonNull(world, "world");
         this.erodedTerrain = Objects.requireNonNull(erodedTerrain, "erodedTerrain");
         this.settings = Objects.requireNonNull(settings, "settings");
-        this.generator = new RivermapGenerator(
-                seed,
-                world,
-                Objects.requireNonNull(drainageTerrain, "drainageTerrain"),
-                drainageClimate,
-                settings);
+        CellLookup drainage = centeredGeneratorLookup(
+                Objects.requireNonNull(drainageTerrain, "drainageTerrain"));
+        CellLookup climate = drainageClimate == null ? null : centeredGeneratorLookup(drainageClimate);
+        this.generator = new RivermapGenerator(seed, world, drainage, climate, settings);
         this.cache = new BoundedConcurrentCache<>(settings.cacheSize());
     }
 
@@ -328,12 +331,14 @@ public final class RiverModel implements CellLookup {
             int z,
             double terrainHeight,
             double alternativeRange) {
-        int regionX = Math.floorDiv(x, settings.regionSize());
-        int regionZ = Math.floorDiv(z, settings.regionSize());
+        int hydrologyX = toHydrologyCoordinate(x);
+        int hydrologyZ = toHydrologyCoordinate(z);
+        int regionX = Math.floorDiv(hydrologyX, settings.regionSize());
+        int regionZ = Math.floorDiv(hydrologyZ, settings.regionSize());
         RiverHit nearest = nearestInMap(
-                map(regionX, regionZ), x, z, terrainHeight, alternativeRange);
-        int localX = Math.floorMod(x, settings.regionSize());
-        int localZ = Math.floorMod(z, settings.regionSize());
+                map(regionX, regionZ), hydrologyX, hydrologyZ, terrainHeight, alternativeRange);
+        int localX = Math.floorMod(hydrologyX, settings.regionSize());
+        int localZ = Math.floorMod(hydrologyZ, settings.regionSize());
         double boundaryRange = settings.gridSpacing() * 2.0D + settings.maximumWidth();
         int minDx = localX <= boundaryRange ? -1 : 0;
         int maxDx = settings.regionSize() - localX <= boundaryRange ? 1 : 0;
@@ -346,8 +351,8 @@ public final class RiverModel implements CellLookup {
                 }
                 RiverHit candidate = nearestInMap(
                         map(regionX + dx, regionZ + dz),
-                        x,
-                        z,
+                        hydrologyX,
+                        hydrologyZ,
                         terrainHeight,
                         alternativeRange);
                 if (betterHit(candidate, nearest, terrainHeight)) {
@@ -461,8 +466,22 @@ public final class RiverModel implements CellLookup {
     }
 
     private LakeHit nearestLake(int x, int z) {
-        int regionX = Math.floorDiv(x, settings.regionSize());
-        int regionZ = Math.floorDiv(z, settings.regionSize());
-        return map(regionX, regionZ).lake(x, z);
+        int hydrologyX = toHydrologyCoordinate(x);
+        int hydrologyZ = toHydrologyCoordinate(z);
+        int regionX = Math.floorDiv(hydrologyX, settings.regionSize());
+        int regionZ = Math.floorDiv(hydrologyZ, settings.regionSize());
+        return map(regionX, regionZ).lake(hydrologyX, hydrologyZ);
+    }
+
+    private int toHydrologyCoordinate(int worldCoordinate) {
+        return Math.addExact(worldCoordinate, settings.regionSize() / 2);
+    }
+
+    private CellLookup centeredGeneratorLookup(CellLookup delegate) {
+        int offset = settings.regionSize() / 2;
+        return (x, z, target) -> delegate.lookup(
+                Math.subtractExact(x, offset),
+                Math.subtractExact(z, offset),
+                target);
     }
 }
