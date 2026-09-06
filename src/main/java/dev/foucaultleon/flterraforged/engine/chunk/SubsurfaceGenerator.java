@@ -69,7 +69,12 @@ final class SubsurfaceGenerator {
         if (hydrology.hasWaterSurfaceHeight()
                 && hydrology.depth() > MIN_WET_DEPTH
                 && hydrology.waterSurfaceHeight() > sample.surfaceHeight()) {
-            waterTop = Math.max(waterTop, (int) Math.floor(hydrology.waterSurfaceHeight()) + 1);
+            int hydrologyWaterTop = (int) Math.floor(hydrology.waterSurfaceHeight()) + 1;
+            if (surfaceY <= context.seaLevel() + 1
+                    && hydrology.waterSurfaceHeight() <= context.seaLevel() + 1.5D) {
+                hydrologyWaterTop = Math.max(hydrologyWaterTop, context.seaLevel() + 1);
+            }
+            waterTop = Math.max(waterTop, hydrologyWaterTop);
         }
         waterTop = clamp(waterTop, solidTop, context.maxYExclusive());
 
@@ -97,6 +102,10 @@ final class SubsurfaceGenerator {
         int surfaceY = column.solidSurfaceY();
         int bedrockThickness = 1 + (int) Math.floor(unitHash(x, context.minY(), z, FLOOR_SALT) * 4.0D);
         int lavaLevel = context.minY() + Math.max(10, context.height() / 24);
+        VerticalNoiseSampler caveA = new VerticalNoiseSampler(x, z, 42.0D, 30.0D, 42.0D, CAVE_A_SALT);
+        VerticalNoiseSampler caveB = new VerticalNoiseSampler(x, z, 58.0D, 37.0D, 58.0D, CAVE_B_SALT);
+        VerticalNoiseSampler cavern = new VerticalNoiseSampler(x, z, 92.0D, 54.0D, 92.0D, CAVERN_SALT);
+        VerticalNoiseSampler ravine = new VerticalNoiseSampler(x, z, 150.0D, 45.0D, 150.0D, RAVINE_SALT);
         for (int y = context.minY(); y < context.maxYExclusive(); y++) {
             NaturalMaterial material;
             if (y < context.minY() + bedrockThickness) {
@@ -109,7 +118,7 @@ final class SubsurfaceGenerator {
                 material = NaturalMaterial.SURFACE;
             } else {
                 int depth = surfaceY - y;
-                if (isNaturalVoid(x, y, z, depth, column.soilDepth())) {
+                if (isNaturalVoid(y, depth, column.soilDepth(), caveA, caveB, cavern, ravine)) {
                     if (y <= lavaLevel && unitHash(x, y, z, LAVA_SALT) > 0.34D) {
                         material = NaturalMaterial.LAVA;
                     } else if (y <= column.groundwaterY()) {
@@ -129,19 +138,26 @@ final class SubsurfaceGenerator {
         }
     }
 
-    private boolean isNaturalVoid(int x, int y, int z, int depth, int soilDepth) {
+    private boolean isNaturalVoid(
+            int y,
+            int depth,
+            int soilDepth,
+            VerticalNoiseSampler caveA,
+            VerticalNoiseSampler caveB,
+            VerticalNoiseSampler cavern,
+            VerticalNoiseSampler ravine) {
         if (depth <= Math.max(7, soilDepth + 3) || y <= context.minY() + 5) {
             return false;
         }
-        double caveA = smoothNoise3D(x / 42.0D, y / 30.0D, z / 42.0D, CAVE_A_SALT);
-        double caveB = smoothNoise3D(x / 58.0D, y / 37.0D, z / 58.0D, CAVE_B_SALT);
-        boolean tunnel = Math.abs(caveA) < 0.105D && Math.abs(caveB) < 0.32D;
+        double caveAValue = caveA.sample(y);
+        double caveBValue = caveB.sample(y);
+        boolean tunnel = Math.abs(caveAValue) < 0.105D && Math.abs(caveBValue) < 0.32D;
 
-        double cavern = smoothNoise3D(x / 92.0D, y / 54.0D, z / 92.0D, CAVERN_SALT);
-        boolean largeCavern = depth > 18 && cavern > 0.68D && caveA > -0.28D;
+        double cavernValue = cavern.sample(y);
+        boolean largeCavern = depth > 18 && cavernValue > 0.68D && caveAValue > -0.28D;
 
-        double ravine = smoothNoise3D(x / 150.0D, y / 45.0D, z / 150.0D, RAVINE_SALT);
-        boolean narrowRavine = depth > 12 && Math.abs(ravine) < 0.028D && caveB > 0.05D;
+        double ravineValue = ravine.sample(y);
+        boolean narrowRavine = depth > 12 && Math.abs(ravineValue) < 0.028D && caveBValue > 0.05D;
         return tunnel || largeCavern || narrowRavine;
     }
 
@@ -172,23 +188,6 @@ final class SubsurfaceGenerator {
         double a = lerp(signedHash(x0, 0, z0, salt), signedHash(x1, 0, z0, salt), fx);
         double b = lerp(signedHash(x0, 0, z1, salt), signedHash(x1, 0, z1, salt), fx);
         return lerp(a, b, fz);
-    }
-
-    private double smoothNoise3D(double x, double y, double z, long salt) {
-        int x0 = fastFloor(x);
-        int y0 = fastFloor(y);
-        int z0 = fastFloor(z);
-        int x1 = x0 + 1;
-        int y1 = y0 + 1;
-        int z1 = z0 + 1;
-        double fx = fade(x - x0);
-        double fy = fade(y - y0);
-        double fz = fade(z - z0);
-        double x00 = lerp(signedHash(x0, y0, z0, salt), signedHash(x1, y0, z0, salt), fx);
-        double x10 = lerp(signedHash(x0, y1, z0, salt), signedHash(x1, y1, z0, salt), fx);
-        double x01 = lerp(signedHash(x0, y0, z1, salt), signedHash(x1, y0, z1, salt), fx);
-        double x11 = lerp(signedHash(x0, y1, z1, salt), signedHash(x1, y1, z1, salt), fx);
-        return lerp(lerp(x00, x10, fy), lerp(x01, x11, fy), fz);
     }
 
     private double signedHash(int x, int y, int z, long salt) {
@@ -223,5 +222,57 @@ final class SubsurfaceGenerator {
 
     private static int clamp(int value, int min, int max) {
         return Math.max(min, Math.min(max, value));
+    }
+
+    /** Reuses the four X/Z-interpolated lattice values while scanning one vertical column. */
+    private final class VerticalNoiseSampler {
+
+        private final int x0;
+        private final int x1;
+        private final int z0;
+        private final int z1;
+        private final double fx;
+        private final double fz;
+        private final double inverseYScale;
+        private final long salt;
+        private int cachedY0 = Integer.MIN_VALUE;
+        private double x00;
+        private double x10;
+        private double x01;
+        private double x11;
+
+        private VerticalNoiseSampler(
+                int x,
+                int z,
+                double xScale,
+                double yScale,
+                double zScale,
+                long salt) {
+            double scaledX = x / xScale;
+            double scaledZ = z / zScale;
+            this.x0 = fastFloor(scaledX);
+            this.x1 = x0 + 1;
+            this.z0 = fastFloor(scaledZ);
+            this.z1 = z0 + 1;
+            this.fx = fade(scaledX - x0);
+            this.fz = fade(scaledZ - z0);
+            this.inverseYScale = 1.0D / yScale;
+            this.salt = salt;
+        }
+
+        private double sample(int y) {
+            double scaledY = y * inverseYScale;
+            int y0 = fastFloor(scaledY);
+            if (y0 != cachedY0) {
+                int y1 = y0 + 1;
+                x00 = lerp(signedHash(x0, y0, z0, salt), signedHash(x1, y0, z0, salt), fx);
+                x10 = lerp(signedHash(x0, y1, z0, salt), signedHash(x1, y1, z0, salt), fx);
+                x01 = lerp(signedHash(x0, y0, z1, salt), signedHash(x1, y0, z1, salt), fx);
+                x11 = lerp(signedHash(x0, y1, z1, salt), signedHash(x1, y1, z1, salt), fx);
+                cachedY0 = y0;
+            }
+            double fy = fade(scaledY - y0);
+            return lerp(lerp(x00, x10, fy), lerp(x01, x11, fy), fz);
+        }
     }
 }
