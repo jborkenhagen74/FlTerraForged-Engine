@@ -1,0 +1,118 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "dev.foucaultleon",
+    "module": "flterraforged-engine",
+    "version": "0.1.0-SNAPSHOT",
+    "attributes": {
+      "org.gradle.status": "integration"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "9.7.1"
+    }
+  },
+  "variants": [
+    {
+      "name": "apiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.version": 17,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api"
+      },
+      "dependencies": [
+        {
+          "group": "dev.foucaultleon",
+          "module": "flterraforged-engine-api",
+          "version": {
+            "requires": "0.1.0-SNAPSHOT"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "flterraforged-engine-0.1.0-SNAPSHOT.jar",
+          "url": "flterraforged-engine-0.1.0-SNAPSHOT.jar",
+          "size": 194406,
+          "sha512": "dfe604bc98754e12811a1400b419ee8f6d2883e8312a70d044a8598df2a3839846f37b507a1ca8df3488d07766a870d8a31d39d970f3f1dbea58f53aa5d83305",
+          "sha256": "c29231304c710c41df1972aa983d70a20a90a938f75beb2640a8c0b95aacfc09",
+          "sha1": "a95cd7371a6adda6545e38594fc333e929ae7153",
+          "md5": "20e91814d12739c39d443681ff76b630"
+        }
+      ]
+    },
+    {
+      "name": "runtimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.version": 17,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime"
+      },
+      "dependencies": [
+        {
+          "group": "dev.foucaultleon",
+          "module": "flterraforged-engine-api",
+          "version": {
+            "requires": "0.1.0-SNAPSHOT"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "flterraforged-engine-0.1.0-SNAPSHOT.jar",
+          "url": "flterraforged-engine-0.1.0-SNAPSHOT.jar",
+          "size": 194406,
+          "sha512": "dfe604bc98754e12811a1400b419ee8f6d2883e8312a70d044a8598df2a3839846f37b507a1ca8df3488d07766a870d8a31d39d970f3f1dbea58f53aa5d83305",
+          "sha256": "c29231304c710c41df1972aa983d70a20a90a938f75beb2640a8c0b95aacfc09",
+          "sha1": "a95cd7371a6adda6545e38594fc333e929ae7153",
+          "md5": "20e91814d12739c39d443681ff76b630"
+        }
+      ]
+    },
+    {
+      "name": "sourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "flterraforged-engine-0.1.0-SNAPSHOT-sources.jar",
+          "url": "flterraforged-engine-0.1.0-SNAPSHOT-sources.jar",
+          "size": 124370,
+          "sha512": "3d116b0c74ab2a02cf285762c95ba2110c82deb98f6e88c3d83ab73be89e9d6a28430faf1382fd4efbfddff654933c695369597327996729cc428c8d80ae7ceb",
+          "sha256": "1ffd80d9edb34ebc74750677b4e97657de3f266cbc7869ba5ea338fbd30a58d4",
+          "sha1": "d7edc93042a807a5573ab8fc258c59c0a76596c0",
+          "md5": "e0f608006b43eb7caa5c218665857dc1"
+        }
+      ]
+    },
+    {
+      "name": "javadocElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "javadoc",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "flterraforged-engine-0.1.0-SNAPSHOT-javadoc.jar",
+          "url": "flterraforged-engine-0.1.0-SNAPSHOT-javadoc.jar",
+          "size": 455497,
+          "sha512": "bb7e657fd34ab51a7ce0615901acf4ba4f4f0729e406b35349a93ad74fbdf8a6e1798288ebbefdcbefcea9431a041ad4f607e6e52242b66e20c2f4f207f6fc0c",
+          "sha256": "c4dce980ffd5095489be4aac447c5cd1166e47dcabd49227e022a44611c72f9b",
+          "sha1": "91285307a08f8b827f5bc3e0d6b81f5e66741306",
+          "md5": "7b6a2c45d36e21aeefd62bc81def7ab4"
+        }
+      ]
+    }
+  ]
+}
