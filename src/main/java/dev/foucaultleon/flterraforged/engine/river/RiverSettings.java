@@ -111,7 +111,9 @@ public record RiverSettings(
      *
      * <p>The visible path is intentionally finer than the old bootstrap network. D8 remains the
      * drainage skeleton, while the path sampler resolves each coarse edge against the local terrain
-     * before it is exposed as river geometry.</p>
+     * before it is exposed as river geometry. Eight padding rings keep a wide deterministic context
+     * around the 20-cell owner region without forcing every cold map to build the 53x53 drainage
+     * grid used by the former 16-ring default.</p>
      *
      * @param settings engine settings
      * @return derived river settings
@@ -125,7 +127,7 @@ public record RiverSettings(
         return new RiverSettings(
                 region,
                 spacing,
-                16,
+                8,
                 5.5D,
                 3.5D,
                 2.0D,
