@@ -9,7 +9,7 @@ import java.util.Objects;
  * @param oceanDepthBelowSea minimum depth below sea level considered ocean
  * @param oceanContinentalness continentalness threshold considered open ocean
  * @param coastHeightAboveSea maximum dry height above sea level considered coast
- * @param coastContinentalness landward continentalness limit of the narrow coast band
+ * @param coastContinentalness landward continentalness limit of the coast band
  * @param riverDepth minimum river incision depth considered a semantic river
  * @param valleySlope maximum valley slope before the semantic type is promoted to hills
  */
@@ -46,11 +46,11 @@ public record TerrainClassificationSettings(
     /**
      * Derives classification thresholds from the same settings that shape the pipeline.
      *
-     * <p>R49 deliberately keeps {@code COAST} as a narrow semantic transition instead of using it
-     * for the whole low continental shelf. The Minecraft adapter maps this semantic to beach-like
-     * biomes, so a broad continentalness interval would turn complete lowland regions into beaches.
-     * The ocean/coast thresholds are therefore intentionally close together and dry coast is kept
-     * close to sea level.</p>
+     * <p>R52 aligns semantic marine classification with the physical shoreline produced by the
+     * terrain profile. Submerged columns near the shoreline are ocean; a beach-like {@code COAST}
+     * semantic is selected only for dry columns close to sea level. This prevents a far-offshore
+     * semantic threshold from disagreeing with the actual ocean floor while still keeping beach
+     * biomes narrow.</p>
      *
      * @param settings engine settings
      * @return coordinated classification thresholds
@@ -59,9 +59,9 @@ public record TerrainClassificationSettings(
         Objects.requireNonNull(settings, "settings");
         return new TerrainClassificationSettings(
                 Math.max(3.0D, settings.relief() * 0.10D),
-                -0.72D,
+                -0.34D,
                 1.25D,
-                -0.69D,
+                0.08D,
                 Math.max(0.60D, settings.riverDepth() * 0.11D),
                 Math.max(2.25D, settings.relief() * 0.07D));
     }
