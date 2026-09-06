@@ -18,12 +18,11 @@ import java.util.concurrent.ConcurrentMap;
  * <p>Completed immutable erosion regions are retained in a bounded concurrent cache. Cold misses
  * use exact-key single-flight ownership: one caller generates a region synchronously on its current
  * thread and duplicate callers for that exact region reuse the same result. Independent regions do
- * not share a cache monitor or a hash-stripe generation lock, so parallel spawn generation cannot
- * serialize unrelated erosion work merely because two region keys collide on the same stripe.</p>
+ * not share a cache monitor or a hash-stripe generation lock.</p>
  *
- * <p>A same-thread recursive ownership guard fails immediately instead of allowing a worker to wait
- * on its own unfinished region. Region generation itself only reads the pre-erosion terrain lookup,
- * keeping the dependency graph acyclic.</p>
+ * <p>R49 centers region ownership around multiples of the region size instead of placing the world
+ * origin on a four-region corner. The normal spawn tile and its one-block gradient halo therefore
+ * cold-start one erosion region rather than up to four.</p>
  */
 public final class ErosionPipeline implements CellLookup {
 
@@ -76,8 +75,8 @@ public final class ErosionPipeline implements CellLookup {
      * @return erosion result
      */
     public ErosionSample sample(int x, int z) {
-        int regionX = Math.floorDiv(x, settings.regionSize());
-        int regionZ = Math.floorDiv(z, settings.regionSize());
+        int regionX = centeredRegion(x, settings.regionSize());
+        int regionZ = centeredRegion(z, settings.regionSize());
         long key = key(regionX, regionZ);
         ErosionTile completed = cache.get(key);
         return completed == null
@@ -119,6 +118,10 @@ public final class ErosionPipeline implements CellLookup {
         }
     }
 
+    private static int centeredRegion(int coordinate, int regionSize) {
+        return Math.floorDiv(Math.addExact(coordinate, regionSize / 2), regionSize);
+    }
+
     private static ErosionTile await(CompletableFuture<ErosionTile> future) {
         try {
             return future.join();
@@ -135,7 +138,7 @@ public final class ErosionPipeline implements CellLookup {
         if (throwable instanceof Error error) {
             throw error;
         }
-        return new IllegalStateException("Erosion-region generation failed", throwable);
+        return new IllegalStateException("Terrain erosion-region generation failed", throwable);
     }
 
     private static long key(int regionX, int regionZ) {
