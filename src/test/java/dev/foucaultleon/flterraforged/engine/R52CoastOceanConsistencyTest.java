@@ -139,7 +139,7 @@ public final class R52CoastOceanConsistencyTest {
     private static boolean isLowCoastalPair(TerrainSample first, TerrainSample second) {
         boolean nearSea = Math.abs(first.surfaceHeight() - SEA_LEVEL) <= 10.0D
                 && Math.abs(second.surfaceHeight() - SEA_LEVEL) <= 10.0D;
-        boolean notCliff = first.gradient() < 2.75D && second.gradient() < 2.75D;
+        boolean notCliff = first.slope() < 2.75D && second.slope() < 2.75D;
         boolean marineTransition = StandardTerrainTypes.OCEAN.equals(first.terrainType())
                 || StandardTerrainTypes.OCEAN.equals(second.terrainType())
                 || StandardTerrainTypes.COAST.equals(first.terrainType())
