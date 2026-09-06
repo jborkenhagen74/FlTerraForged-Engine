@@ -9,6 +9,7 @@ import dev.foucaultleon.flterraforged.engine.api.terrain.StandardTerrainTypes;
 import dev.foucaultleon.flterraforged.engine.api.terrain.TerrainSample;
 import org.junit.jupiter.api.Test;
 
+/** Legacy water-level regressions updated for the R53 single-authority stage boundary. */
 final class R51WaterLevelInvariantTest {
 
     @Test
@@ -22,13 +23,15 @@ final class R51WaterLevelInvariantTest {
     }
 
     @Test
-    void lowRiverMouthCannotRemainAboveSeaSurface() {
+    void subsurfacePreservesAlreadyStabilizedRiverSurface() {
         EngineChunkSnapshot snapshot = snapshot(sample(
                 61.0D,
                 StandardTerrainTypes.RIVER,
                 new RiverSample(0.0D, 9.0D, 5.0D, 66.0D, 120.0D)));
 
-        assertEquals(64, snapshot.column(0, 0).waterTopExclusive());
+        // River-mouth blending belongs to WorldgenPipeline. SubsurfaceGenerator must never infer
+        // proximity to the sea and clamp a published hydrology surface a second time.
+        assertEquals(67, snapshot.column(0, 0).waterTopExclusive());
     }
 
     @Test
