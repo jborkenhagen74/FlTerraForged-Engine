@@ -1,30 +1,30 @@
 package dev.foucaultleon.flterraforged.engine.chunk;
 
-import dev.foucaultleon.flterraforged.engine.WorldSampleCache;
 import dev.foucaultleon.flterraforged.engine.api.EngineContext;
 import dev.foucaultleon.flterraforged.engine.api.chunk.ChunkSnapshot;
 import dev.foucaultleon.flterraforged.engine.api.terrain.TerrainSample;
 import dev.foucaultleon.flterraforged.engine.internal.BoundedConcurrentCache;
 import java.util.HashSet;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.CompletionException;
 
 /**
  * Exact-key single-flight cache for immutable complete chunk snapshots.
  *
  * <p>Only one thread owns generation of a missing chunk key. Concurrent duplicate requests join
- * that exact result; independent chunk keys never share a lock. Snapshot generation may read the
- * lower-level final terrain-sample cache but never calls back into this cache.</p>
+ * that exact result; independent chunk keys never share a lock. Snapshot generation reads only the
+ * lower-level final terrain sampler and never calls back into this cache or a host generator.</p>
  */
 public final class ChunkSnapshotCache {
 
     /** Conservative bound: a 384-high snapshot is roughly 100 KiB before object overhead. */
     static final int DEFAULT_MAXIMUM_SNAPSHOTS = 128;
 
-    private final WorldSampleCache samples;
+    private final TerrainPointSampler samples;
     private final SubsurfaceGenerator generator;
     private final BoundedConcurrentCache<Long, ChunkSnapshot> completed =
             new BoundedConcurrentCache<>(DEFAULT_MAXIMUM_SNAPSHOTS);
@@ -33,14 +33,14 @@ public final class ChunkSnapshotCache {
     private final ThreadLocal<Set<Long>> ownedKeys = ThreadLocal.withInitial(HashSet::new);
 
     /**
-     * Creates a chunk snapshot cache over the shared final terrain-sample cache.
+     * Creates a chunk snapshot cache over the shared final terrain sampler.
      *
      * @param context immutable world context
-     * @param samples lower-level final terrain-sample cache
+     * @param samples narrow bridge to the lower-level final terrain-sample cache
      */
-    public ChunkSnapshotCache(EngineContext context, WorldSampleCache samples) {
-        this.samples = samples;
-        this.generator = new SubsurfaceGenerator(context);
+    public ChunkSnapshotCache(EngineContext context, TerrainPointSampler samples) {
+        this.samples = Objects.requireNonNull(samples, "samples");
+        this.generator = new SubsurfaceGenerator(Objects.requireNonNull(context, "context"));
     }
 
     /**
