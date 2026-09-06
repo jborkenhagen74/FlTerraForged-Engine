@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify Engine isolation, strict Javadocs and R50 lake/performance invariants."""
+"""Verify Engine isolation, strict Javadocs and R51 water/performance invariants."""
 
 from pathlib import Path
 import re
@@ -102,17 +102,17 @@ if "maven.pkg.github.com" in build_text or "packages: read" in workflow_text or 
 
 require(
     ROOT / ".github/workflows/build.yml",
-    ("release/r50-lake-biome-performance", "FlTerraForged-Engine-R50-${short_sha}.jar", "Publish Engine R50"),
-    "R50 workflow")
+    ("release/r51-water-coldstart-performance", "FlTerraForged-Engine-R51-${short_sha}.jar", "Publish Engine R51"),
+    "R51 workflow")
 require(
     JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/DefaultEngineProvider.java",
-    ('VERSION = "0.1.0-SNAPSHOT-r50"', "EngineApiVersion.CURRENT"),
-    "R50 provider")
+    ('VERSION = "0.1.0-SNAPSHOT-r51"', "EngineApiVersion.CURRENT"),
+    "R51 provider")
 
 world_cache = require(
     JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/WorldSampleCache.java",
     ("TILE_SIZE = 16", "sampleChunk(int chunkX, int chunkZ)", "copySamples", "inFlight", "ownedKeys"),
-    "R50 final sample cache")
+    "R51 final sample cache")
 if "synchronized" in world_cache:
     ERRORS.append("final sample cache must not use a global synchronized monitor")
 require(
@@ -123,61 +123,61 @@ require(
 require(
     JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/erosion/ErosionSettings.java",
     ("\n                64,\n", "\n                16,\n", "cacheSize", "return new ErosionSettings"),
-    "R50 erosion settings")
+    "R51 erosion settings")
 erosion = require(
     JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/erosion/ErosionPipeline.java",
     ("centeredRegion", "Math.addExact(coordinate, regionSize / 2)", "inFlight", "ownedRegionKeys"),
-    "R50 centered erosion ownership")
+    "R51 centered erosion ownership")
 if "Math.floorDiv(x, settings.regionSize())" in erosion:
-    ERRORS.append("R50 erosion places world origin on a region boundary")
+    ERRORS.append("R51 erosion places world origin on a region boundary")
 
 require(
     JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/terrain/TerrainClassificationSettings.java",
     ("-0.72D", "1.25D", "-0.69D"),
-    "R50 coast thresholds")
+    "R51 coast thresholds")
 require(
     JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/terrain/TerrainClassifier.java",
-    ("submerged && oceanward", "height >= seaLevel - 0.05D", "StandardTerrainTypes.COAST"),
-    "R50 shoreline classifier")
+    ("SUBMERGED_SHELF_CONTINENTALNESS_EXTENSION = 0.22D", "height >= seaLevel - 0.05D", "StandardTerrainTypes.COAST"),
+    "R51 shoreline classifier")
 
 require(
     JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/pipeline/WorldgenPipeline.java",
-    ("placementClimate", "placementSample(int x, int z)", "sampleTile(int originX"),
-    "R50 placement/final pipeline")
-default_world = require(
+    ("placementClimate", "sampleTile(int originX", "stabilizeWaterLevels", "riverWaterSurfaceHeight = seaLevel", "minimumDryHeight"),
+    "R51 canonical water pipeline")
+require(
     JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/DefaultTerrainWorld.java",
     ("placementSample(int x, int z)", "sampleChunk(int chunkX, int chunkZ)", "sampleCache.sampleChunk"),
-    "R50 terrain world")
+    "R51 terrain world")
 require(
     JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/chunk/ChunkSnapshotCache.java",
     ("samples.sampleChunk(chunkX, chunkZ)", "terrain.length != 256", "inFlight", "ownedKeys"),
-    "R50 chunk snapshot cache")
+    "R51 chunk snapshot cache")
 
 snapshot = require(
     JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/chunk/EngineChunkSnapshot.java",
     ("private static final NaturalMaterial[] MATERIALS", "MATERIALS[ordinal]"),
-    "R50 immutable chunk snapshot")
+    "R51 immutable chunk snapshot")
 if "NaturalMaterial.values()[" in snapshot:
     ERRORS.append("materialAt must not allocate an enum values array per voxel")
 require(
     JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/chunk/SubsurfaceGenerator.java",
-    ("naturalTopY", "VerticalNoiseSampler"),
-    "R50 subsurface generator")
+    ("naturalTopY", "VerticalNoiseSampler", "MOUTH_CLAMP_HEIGHT", "Math.min(waterSurface, context.seaLevel())"),
+    "R51 subsurface generator")
 
-lake_hit = require(
+require(
     JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/river/LakeHit.java",
     ("long basinKey", "hasBasinKey", "withWaterSurfaceHeight"),
-    "R50 lake hit")
+    "R51 lake hit")
 require(
     JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/river/LakeField.java",
     ("basinKeys", "stable hydrology-grid anchor", "keys.add(key(anchorX, anchorZ))"),
-    "R50 lake basin anchors")
+    "R51 lake basin anchors")
 river_model = require(
     JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/river/RiverModel.java",
     ("canonicalLakeLevels", "ownerRegionX", "owner.basinKey() == local.basinKey()", "ownedMapKeys"),
-    "R50 lake reconciliation")
+    "R51 lake reconciliation")
 if "for (int dz = -1; dz <= 1; dz++)" in river_model and "nearestLake" in river_model:
-    ERRORS.append("R50 must not restore unconditional eight-neighbor lake probing")
+    ERRORS.append("R51 must not restore unconditional eight-neighbor lake probing")
 require(
     JAVA_ROOT / "dev/foucaultleon/flterraforged/engine/river/RiverNetworkFilter.java",
     ("visibleNetwork", "streamOrder"),
@@ -196,4 +196,4 @@ if ERRORS:
     print("\n".join(ERRORS), file=sys.stderr)
     raise SystemExit(1)
 
-print("Engine R50 layout verified: canonical lake levels, shared chunk terrain tiles and strict single-flight caches")
+print("Engine R51 layout verified: canonical sea/river levels, bulk terrain reuse and strict single-flight caches")
