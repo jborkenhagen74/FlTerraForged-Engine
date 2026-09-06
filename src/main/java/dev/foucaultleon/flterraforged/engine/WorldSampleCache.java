@@ -22,17 +22,20 @@ import java.util.concurrent.ConcurrentMap;
  * caller computes synchronously on its current worker while all other callers reuse that result. No
  * additional task is submitted to a world-generation executor.</p>
  *
- * <p>R45 uses 8x8 tiles instead of 16x16 tiles. A sparse Minecraft height, biome or structure
- * lookup therefore evaluates a 10x10 pipeline envelope rather than an 18x18 envelope, while dense
- * chunk passes still reuse neighboring completed tiles. The maximum tile count is increased to
- * 4096 so the total retained final-sample capacity remains 262144 X/Z samples, equal to 1024 16x16
- * tiles. A thread-local ownership guard also turns an accidental recursive same-key request into an
- * immediate diagnostic failure instead of letting a worker join its own unfinished future.</p>
+ * <p>R46 restores 16x16 tiles after the R45 8x8 sparse-sampling experiment. Minecraft's dominant
+ * generation path consumes complete 16x16 chunks: four 8x8 tiles each require their own two-block
+ * pipeline halo and therefore evaluate 400 pipeline cells for one dense chunk, while one 16x16 tile
+ * evaluates only an 18x18 envelope, or 324 cells. Structure-stage sparse sampling is reduced in the
+ * Minecraft adapter instead of forcing the shared final-sample cache into a dense-path regression.
+ * The bounded cache retains 1024 tiles, preserving the same 262144 final X/Z sample capacity.</p>
+ *
+ * <p>A thread-local ownership guard turns accidental recursive same-key requests into an immediate
+ * diagnostic failure instead of letting a worker join its own unfinished future.</p>
  */
 final class WorldSampleCache {
 
-    static final int TILE_SIZE = 8;
-    static final int DEFAULT_MAXIMUM_TILES = 4096;
+    static final int TILE_SIZE = 16;
+    static final int DEFAULT_MAXIMUM_TILES = 1024;
 
     private final WorldgenPipeline pipeline;
     private final BoundedConcurrentCache<Long, TerrainSampleTile> cache;
