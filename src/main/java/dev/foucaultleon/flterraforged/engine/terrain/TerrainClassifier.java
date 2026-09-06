@@ -8,14 +8,11 @@ import java.util.Objects;
 /** Applies final semantic overrides to an engine-selected base terrain landform. */
 public final class TerrainClassifier {
 
-    private static final double SUBMERGED_SHELF_CONTINENTALNESS_EXTENSION = 0.22D;
-
     /**
      * Canonical dry shoreline semantic.
      *
-     * <p>Defined locally instead of referencing the newer standard shoreline convenience constant so the
-     * engine remains source-compatible with the previously published 0.1 API, which did not yet
-     * expose that convenience constant.</p>
+     * <p>Defined locally instead of referencing a newer standard shoreline convenience constant so
+     * the engine remains source-compatible with the published API.</p>
      */
     private static final TerrainType LAKE_SHORE =
             TerrainType.of(StandardTerrainTypes.NAMESPACE, "lake_shore");
@@ -24,7 +21,7 @@ public final class TerrainClassifier {
 
     /** Creates a terrain classifier using conservative standalone defaults. */
     public TerrainClassifier() {
-        this(new TerrainClassificationSettings(4.0D, -0.72D, 1.25D, -0.69D, 0.75D, 2.5D));
+        this(new TerrainClassificationSettings(4.0D, -0.34D, 1.25D, 0.08D, 0.75D, 2.5D));
     }
 
     /**
@@ -106,19 +103,12 @@ public final class TerrainClassifier {
         Objects.requireNonNull(river, "river");
 
         boolean submerged = height < seaLevel - 0.05D;
-        boolean belowSea = height < seaLevel - 1.50D;
-        boolean oceanward = continentalness < settings.coastContinentalness();
-        boolean submergedShelf = submerged
-                && continentalness
-                        < settings.coastContinentalness() + SUBMERGED_SHELF_CONTINENTALNESS_EXTENSION;
-        boolean deepEnough = height < seaLevel - settings.oceanDepthBelowSea();
+        boolean deepOcean = continentalness < settings.oceanContinentalness();
+        boolean physicalMarineShelf = continentalness < settings.coastContinentalness();
 
-        // Only the submerged marine shelf extends landward. The dry COAST/BEACH semantic below
-        // remains narrow, so fixing below-sea shoreline holes cannot create wide beach landstrips.
-        if ((deepEnough && oceanward)
-                || (continentalness < settings.oceanContinentalness() && belowSea)
-                || (submerged && oceanward)
-                || submergedShelf) {
+        // Inland hydrology is explicit and must not be reclassified merely because the depression
+        // lies below global sea level. Only the true open-ocean side outranks lake semantics.
+        if (submerged && deepOcean) {
             return StandardTerrainTypes.OCEAN;
         }
         if (lake && river.hasWaterSurfaceHeight()) {
@@ -127,11 +117,14 @@ public final class TerrainClassifier {
         if (river.hasWaterSurfaceHeight() && river.depth() >= settings.riverDepth()) {
             return StandardTerrainTypes.RIVER;
         }
+        if (submerged && physicalMarineShelf) {
+            return StandardTerrainTypes.OCEAN;
+        }
         if (lakeShore) {
             return LAKE_SHORE;
         }
-        if (continentalness < settings.coastContinentalness()
-                && height >= seaLevel - 0.05D
+        if (physicalMarineShelf
+                && !submerged
                 && height <= seaLevel + settings.coastHeightAboveSea()) {
             return StandardTerrainTypes.COAST;
         }
